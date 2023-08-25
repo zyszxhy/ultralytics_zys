@@ -4,4 +4,6 @@ from .rtdetr import RTDETR
 from .sam import SAM
 from .yolo import YOLO
 
-__all__ = 'YOLO', 'RTDETR', 'SAM'  # allow simpler import
+from .rtdetr import RTDETR_m
+
+__all__ = 'YOLO', 'RTDETR', 'SAM', 'RTDETR_m'  # allow simpler import

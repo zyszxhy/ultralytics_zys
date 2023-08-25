@@ -4,4 +4,6 @@ from .model import RTDETR
 from .predict import RTDETRPredictor
 from .val import RTDETRValidator
 
-__all__ = 'RTDETRPredictor', 'RTDETRValidator', 'RTDETR'
+from .model_m import RTDETR_m
+
+__all__ = 'RTDETRPredictor', 'RTDETRValidator', 'RTDETR', 'RTDETR_m'

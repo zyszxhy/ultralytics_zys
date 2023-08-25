@@ -4,5 +4,8 @@ from .base import BaseDataset
 from .build import build_dataloader, build_yolo_dataset, load_inference_source
 from .dataset import ClassificationDataset, SemanticDataset, YOLODataset
 
+from .base_m import BaseDataset_m
+from .dataset_m import YOLODataset_m
+
 __all__ = ('BaseDataset', 'ClassificationDataset', 'SemanticDataset', 'YOLODataset', 'build_yolo_dataset',
-           'build_dataloader', 'load_inference_source')
+           'build_dataloader', 'load_inference_source', 'BaseDataset_m', 'YOLODataset_m')
