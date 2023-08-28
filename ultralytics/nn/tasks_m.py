@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment)
+                                    RTDETRDecoder, Segment, Add)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -203,7 +203,7 @@ class BaseModel_m(nn.Module):
             raise TypeError(f'{weights} is not exist.')
         # model = weights['model'] if isinstance(weights, dict) else weights  # torchvision models are not dicts
         csd = model['model'].float().state_dict()  # checkpoint state_dict as FP32
-        # csd = format_state_dict(csd)
+        csd = format_state_dict(csd)
         csd = intersect_dicts(csd, self.state_dict())  # intersect
         self.load_state_dict(csd, strict=False)  # load
         if verbose:
@@ -704,6 +704,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
+        elif m is Add:
+            if ch[f[0]] == ch[f[1]]:
+                c2 = ch[f[0]]
+                args = [c2]
+            else:
+                raise TypeError('The channel nums of the two feature maps must be the same.')
         elif m in (Detect, Segment, Pose):
             args.append([ch[x] for x in f])
             if m is Segment:
@@ -839,43 +845,15 @@ def format_state_dict(csd):
 
             layer_id = int(key.split('.')[1])
 
-            if layer_id>=0 and layer_id<=2:
+            if layer_id>=0 and layer_id<=9:
                 my_state_dict[key] = value
-                layer_id_ir = str(layer_id + 3)
+                layer_id_ir = str(layer_id + 10)
                 key_ir = key.replace(str(layer_id), layer_id_ir, 1)
-                # my_yolo_state_dict[key_ir] = value
-                my_state_dict[key_ir] = csd[key]
+                my_state_dict[key_ir] = value
 
-            elif layer_id>=3 and layer_id<=4:
-                layer_id_rgb = str(layer_id + 6)
-                key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
-                my_state_dict[key_rgb] = value
-                layer_id_ir = str(layer_id + 8)
-                key_ir = key.replace(str(layer_id), layer_id_ir, 1)
-                # my_yolo_state_dict[key_ir] = value
-                my_state_dict[key_ir] = csd[key]
-            
-            elif layer_id>=5 and layer_id<=6:
-                layer_id_rgb = str(layer_id + 11)
-                key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
-                my_state_dict[key_rgb] = value
-                layer_id_ir = str(layer_id + 13)
-                key_ir = key.replace(str(layer_id), layer_id_ir, 1)
-                # my_yolo_state_dict[key_ir] = value
-                my_state_dict[key_ir] = csd[key]
-            
-            elif layer_id>=7 and layer_id<=9:
-                layer_id_rgb = str(layer_id + 16)
-                key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
-                my_state_dict[key_rgb] = value
-                layer_id_ir = str(layer_id + 19)
-                key_ir = key.replace(str(layer_id), layer_id_ir, 1)
-                # my_yolo_state_dict[key_ir] = value
-                my_state_dict[key_ir] = csd[key]
-
-            elif layer_id>=10:
-                layer_id_rgb = str(layer_id + 25)
-                key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
-                my_state_dict[key_rgb] = value
+            elif layer_id>=11:
+                layer_id = str(layer_id + 13)
+                key = key.replace(str(layer_id), layer_id, 1)
+                my_state_dict[key] = value
         
         return my_state_dict

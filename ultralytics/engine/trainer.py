@@ -464,6 +464,9 @@ class BaseTrainer:
         load/create/download model for any task.
         """
         if isinstance(self.model, torch.nn.Module):  # if model is loaded beforehand. No setup needed
+            if self.args.pretrained:
+                weights = self.args.pretrained
+                self.model.load(weights)
             return
 
         model, weights = self.model, None

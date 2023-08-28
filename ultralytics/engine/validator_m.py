@@ -28,7 +28,7 @@ from tqdm import tqdm
 
 from ultralytics.cfg import get_cfg
 from ultralytics.data.utils_m import check_cls_dataset, check_det_dataset_m
-from ultralytics.nn.autobackend import AutoBackend
+from ultralytics.nn.autobackend_m import AutoBackend_m
 from ultralytics.utils import LOGGER, RANK, SETTINGS, TQDM_BAR_FORMAT, callbacks, colorstr, emojis
 from ultralytics.utils.checks import check_imgsz
 from ultralytics.utils.files import increment_path
@@ -126,7 +126,7 @@ class BaseValidator_m:
         else:
             callbacks.add_integration_callbacks(self)
             self.run_callbacks('on_val_start')
-            model = AutoBackend(model or self.args.model,
+            model = AutoBackend_m(model or self.args.model,
                                 device=select_device(self.args.device, self.args.batch),
                                 dnn=self.args.dnn,
                                 data=self.args.data,

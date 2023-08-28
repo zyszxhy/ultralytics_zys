@@ -3,7 +3,8 @@ from ultralytics import RTDETR_m
 model = RTDETR_m('rtdetr-l_m.yaml')
 
 model.train(data='FLIR.yaml', 
-            epochs=100,
+            epochs=1,
+            batch=8,
             imgsz=640,
             resume=False,
             pretrained='/home/data/ZYS/pretrained_weights/rtdetr-l.pt')
@@ -12,7 +13,7 @@ model.train(data='FLIR.yaml',
 
 # model = RTDETR('rtdetr-l.yaml')
 # model.train(data='FLIR.yaml', 
-#             epochs=100, 
-#             imgsz=640, 
-#             resume=False, 
+#             epochs=100,
+#             imgsz=640,
+#             resume=False,
 #             pretrained='/home/data/ZYS/pretrained_weights/rtdetr-l.pt')
