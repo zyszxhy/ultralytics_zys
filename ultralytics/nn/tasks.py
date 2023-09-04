@@ -194,12 +194,17 @@ class BaseModel(nn.Module):
             verbose (bool, optional): Whether to log the transfer progress. Defaults to True.
         """
         import os
-        if os.path.exists(weights):
-            model = torch.load(weights)
+        if isinstance(weights, str):
+            if os.path.exists(weights):
+                model = torch.load(weights)
+                csd = model['model'].float().state_dict()  # checkpoint state_dict as FP32
+            else:
+                raise TypeError(f'{weights} is not exist.')
         else:
-            raise TypeError(f'{weights} is not exist.')
+            model = weights.model
+            csd = model.float().state_dict()
+            csd = format_state_dict(csd)    # 加载预训练权重
         # model = weights['model'] if isinstance(weights, dict) else weights  # torchvision models are not dicts
-        csd = model['model'].float().state_dict()  # checkpoint state_dict as FP32
         csd = intersect_dicts(csd, self.state_dict())  # intersect
         self.load_state_dict(csd, strict=False)  # load
         if verbose:
@@ -795,3 +800,15 @@ def guess_model_task(model):
     LOGGER.warning("WARNING ⚠️ Unable to automatically guess model task, assuming 'task=detect'. "
                    "Explicitly define task for your model, i.e. 'task=detect', 'segment', 'classify', or 'pose'.")
     return 'detect'  # assume detect
+
+
+def format_state_dict(csd):
+    from collections import OrderedDict
+
+    my_state_dict = OrderedDict()
+
+    for key, value in csd.items():
+        newkey = 'model.' + key
+        my_state_dict[newkey] = value
+        
+    return my_state_dict

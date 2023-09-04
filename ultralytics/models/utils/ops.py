@@ -176,11 +176,11 @@ def get_cdn_group(batch,
     gt_groups = batch['gt_groups']
     total_num = sum(gt_groups)
     max_nums = max(gt_groups)
-    if max_nums == 0:
+    if max_nums == 0:   # 没有标签则不进行对比去噪训练样本生成
         return None, None, None, None
 
-    num_group = num_dn // max_nums
-    num_group = 1 if num_group == 0 else num_group
+    num_group = num_dn // max_nums  # CDN组数，每个CDN组都有每个gt框的正查询样本和负查询样本
+    num_group = 1 if num_group == 0 else num_group  # 至少有一个CDN组以生成对比去噪样本
     # pad gt to max_num of a batch
     bs = len(gt_groups)
     gt_cls = batch['cls']  # (bs*num, )
@@ -196,7 +196,7 @@ def get_cdn_group(batch,
     # (bs*num*num_group, ), the second total_num*num_group part as negative samples
     neg_idx = torch.arange(total_num * num_group, dtype=torch.long, device=gt_bbox.device) + num_group * total_num
 
-    if cls_noise_ratio > 0:
+    if cls_noise_ratio > 0: # 类别加噪
         # half of bbox prob
         mask = torch.rand(dn_cls.shape) < (cls_noise_ratio * 0.5)
         idx = torch.nonzero(mask).squeeze(-1)
@@ -204,19 +204,19 @@ def get_cdn_group(batch,
         new_label = torch.randint_like(idx, 0, num_classes, dtype=dn_cls.dtype, device=dn_cls.device)
         dn_cls[idx] = new_label
 
-    if box_noise_scale > 0:
+    if box_noise_scale > 0: # box加噪
         known_bbox = xywh2xyxy(dn_bbox)
 
         diff = (dn_bbox[..., 2:] * 0.5).repeat(1, 2) * box_noise_scale  # 2*num_group*bs*num, 4
 
-        rand_sign = torch.randint_like(dn_bbox, 0, 2) * 2.0 - 1.0
-        rand_part = torch.rand_like(dn_bbox)
-        rand_part[neg_idx] += 1.0
+        rand_sign = torch.randint_like(dn_bbox, 0, 2) * 2.0 - 1.0   # -1, 1 随机加噪方向
+        rand_part = torch.rand_like(dn_bbox)    # 0-1 随机加噪尺度大小
+        rand_part[neg_idx] += 1.0   # 负查询样本加噪比例尺度大于1
         rand_part *= rand_sign
         known_bbox += rand_part * diff
         known_bbox.clip_(min=0.0, max=1.0)
         dn_bbox = xyxy2xywh(known_bbox)
-        dn_bbox = inverse_sigmoid(dn_bbox)
+        dn_bbox = inverse_sigmoid(dn_bbox)  # ?
 
     # total denoising queries
     num_dn = int(max_nums * 2 * num_group)

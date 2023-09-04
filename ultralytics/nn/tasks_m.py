@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment, Add)
+                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -461,12 +461,15 @@ class RTDETRDetectionModel_m(DetectionModel_m):
         Returns:
             (torch.Tensor): The last output of the model.
         """
+        import operator as op
         y, dt = [], []  # outputs
         x = x_rgb
         for m in self.model[:-1]:  # except the head part
             if m.f != -1:  # if not from previous layer
                 if m.f == -10:
                     x = x_ir
+                elif op.eq(m.f,[-1, -10]):
+                    x = [x, x_ir]
                 else:
                     x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
@@ -703,7 +706,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
-            c2 = sum(ch[x] for x in f)
+            if f == [-1, -10]:
+                c2 = 6
+            else:
+                c2 = sum(ch[x] for x in f)
         elif m is Add:
             if ch[f[0]] == ch[f[1]]:
                 c2 = ch[f[0]]
@@ -714,6 +720,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
+        elif m is RTDETRDecoder_m:  # special case, channels arg must be passed in index 1
+            args.insert(1, [ch[x] for x in f])
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
         else:
@@ -725,7 +733,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         m_.i, m_.f, m_.type = i, f, t  # attach index, 'from' index, type
         if verbose:
             LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<45}{str(args):<30}')  # print
-        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
+        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if (x != -1 and x != -10))  # append to savelist
         layers.append(m_)
         if i == 0:
             ch = []
@@ -848,12 +856,12 @@ def format_state_dict(csd):
             if layer_id>=0 and layer_id<=9:
                 my_state_dict[key] = value
                 layer_id_ir = str(layer_id + 10)
-                key_ir = key.replace(str(layer_id), layer_id_ir, 1)
+                key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
                 my_state_dict[key_ir] = value
 
-            elif layer_id>=11:
-                layer_id = str(layer_id + 13)
-                key = key.replace(str(layer_id), layer_id, 1)
+            elif layer_id>=10:
+                new_layer_id = str(layer_id + 13)
+                key = key.replace(str(layer_id), str(new_layer_id), 1)
                 my_state_dict[key] = value
         
         return my_state_dict
