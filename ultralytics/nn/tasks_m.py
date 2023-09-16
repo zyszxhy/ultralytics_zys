@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add)
+                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add, Modal_norm)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -76,7 +76,7 @@ class BaseModel_m(nn.Module):
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
-                if m.f == -10:
+                if m.f == -4:
                     x = x_ir
                 else:
                     x = y[m.f] if isinstance(m.f, int) else [x_rgb if j == -1 else y[j] for j in m.f]  # from earlier layers
@@ -466,9 +466,9 @@ class RTDETRDetectionModel_m(DetectionModel_m):
         x = x_rgb
         for m in self.model[:-1]:  # except the head part
             if m.f != -1:  # if not from previous layer
-                if m.f == -10:
+                if m.f == -4:
                     x = x_ir
-                elif op.eq(m.f,[-1, -10]):
+                elif op.eq(m.f,[-1, -4]):
                     x = [x, x_ir]
                 else:
                     x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
@@ -696,7 +696,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f], *args]
         elif m in (HGStem, HGBlock):
             c1, cm, c2 = ch[f], args[0], args[1]
-            if f == -10:
+            if f == -4:
                 c1 = 3
             args = [c1, cm, c2, *args[2:]]
             if m is HGBlock:
@@ -706,11 +706,17 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
-            if f == [-1, -10]:
+            if f == [-1, -4]:
                 c2 = 6
             else:
                 c2 = sum(ch[x] for x in f)
         elif m is Add:
+            if ch[f[0]] == ch[f[1]]:
+                c2 = ch[f[0]]
+                args = [c2]
+            else:
+                raise TypeError('The channel nums of the two feature maps must be the same.')
+        elif m is Modal_norm:
             if ch[f[0]] == ch[f[1]]:
                 c2 = ch[f[0]]
                 args = [c2]
@@ -733,7 +739,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         m_.i, m_.f, m_.type = i, f, t  # attach index, 'from' index, type
         if verbose:
             LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<45}{str(args):<30}')  # print
-        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if (x != -1 and x != -10))  # append to savelist
+        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if (x != -1 and x != -4))  # append to savelist
         layers.append(m_)
         if i == 0:
             ch = []
@@ -853,14 +859,43 @@ def format_state_dict(csd):
 
             layer_id = int(key.split('.')[1])
 
-            if layer_id>=0 and layer_id<=9:
-                my_state_dict[key] = value
-                layer_id_ir = str(layer_id + 10)
+            # if layer_id>=0 and layer_id<=9:
+            #     my_state_dict[key] = value
+            #     layer_id_ir = str(layer_id + 10)
+            #     key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
+            #     my_state_dict[key_ir] = value
+
+            # elif layer_id>=10:
+            #     new_layer_id = str(layer_id + 13)
+            #     key = key.replace(str(layer_id), str(new_layer_id), 1)
+            #     my_state_dict[key] = value
+
+            if layer_id>=0 and layer_id<=3:
+                layer_id_rgb = str(layer_id)
+                layer_id_ir = str(layer_id + 4)
+                key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
                 key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
+                my_state_dict[key_rgb] = value
+                my_state_dict[key_ir] = value
+            
+            elif layer_id>=4 and layer_id<=7:
+                layer_id_rgb = str(layer_id + 6)
+                layer_id_ir = str(layer_id + 10)
+                key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
+                key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
+                my_state_dict[key_rgb] = value
+                my_state_dict[key_ir] = value
+
+            elif layer_id>=8 and layer_id<=9:
+                layer_id_rgb = str(layer_id + 12)
+                layer_id_ir = str(layer_id + 14)
+                key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
+                key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
+                my_state_dict[key_rgb] = value
                 my_state_dict[key_ir] = value
 
             elif layer_id>=10:
-                new_layer_id = str(layer_id + 13)
+                new_layer_id = str(layer_id + 15)
                 key = key.replace(str(layer_id), str(new_layer_id), 1)
                 my_state_dict[key] = value
         

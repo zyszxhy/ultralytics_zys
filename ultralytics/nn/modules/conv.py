@@ -302,3 +302,62 @@ class Add(nn.Module):
 
     def forward(self, x):
         return torch.add(x[0], x[1])
+    
+class Modal_norm(nn.Module):
+    # normalize one modality to another
+    def __init__(self, in_channel):
+        super(Modal_norm, self).__init__()
+        self.wb = nn.Conv2d(in_channel, in_channel, 3, 1, 1)
+        self.wg = nn.Conv2d(in_channel, in_channel, 3, 1, 1)
+        self.wd = nn.Conv2d(in_channel, in_channel, 3, 1, 1)
+        self.relu = nn.ReLU()
+        self.wq = nn.Conv2d(in_channel, in_channel, 3, 1, 1)
+        self.norm = nn.InstanceNorm2d(in_channel)
+
+    def forward(self, x):
+        x0 = x[0]
+        x1 = x[1]
+        # mean_1, std_1 = mean_std(x1, dim=[2,3], keepdim=True)
+        # x1_norm = (x1 - mean_1) / std_1
+        x1_norm = self.norm(x1)
+        # mean_0, std_0 = mean_std(x0, dim=[2,3], keepdim=True)
+        mean_0_1, std_0_1 = self.instance_norm(x0)
+
+        x_mid = self.relu(self.wd(x0))
+        beta = self.wb(x_mid) + std_0_1
+        gama = self.wg(x_mid) + mean_0_1
+
+        return self.wq(x1_norm * gama + beta) + x0
+    
+    def instance_norm(self, input, eps=1e-5):
+        reduced_dim = [i for i in range(input.dim()) if i not in [0, 1]]
+        normalized_shape = [1]*len(input.shape)
+        normalized_shape[1] = input.shape[1]
+ 
+        shape = [1]*len(input.shape)
+        shape[:2] = input.shape[:2]
+
+        mean = input.mean(dim=reduced_dim)
+        var = input.var(dim=reduced_dim, unbiased=False)
+        
+        # x_hat = (input-mean.view(*shape))/torch.sqrt(var.view(*shape)+eps)
+        return mean.view(*shape), torch.sqrt(var.view(*shape)+eps)
+
+def mean_std(x, dim, keepdim=False, eps=1e-5):
+    dim = list(dim) if not isinstance(dim, int) else [dim]
+    size = list(x.size())
+    dims = len(size)
+    permute_dim = [i for i in range(dims) if i not in dim]
+    permute_dim += dim
+    x = x.permute(permute_dim)
+    view_size = [size[i] for i in range(dims) if i not in dim]
+    view_size += [-1]
+    x = x.contiguous()
+    x = x.view(view_size)
+    mean = torch.mean(x, dim=-1, keepdim=False)
+    std = torch.std(x, dim=-1, keepdim=False) + eps
+    if keepdim:
+        final_size = [size[i] if i not in dim else 1 for i in range(dims)]
+        mean = mean.view(final_size)
+        std = std.view(final_size)
+    return mean, std

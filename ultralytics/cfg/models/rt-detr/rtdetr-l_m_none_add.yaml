@@ -25,7 +25,7 @@ backbone:
   - [-1, 6, HGBlock, [384, 2048, 5, True, False]]  # 9 stage 4 2048
 
   # ir stream
-  - [-10, 1, HGStem, [32, 48]]  # 10-P2/4
+  - [-4, 1, HGStem, [32, 48]]  # 10-P2/4
   - [-1, 6, HGBlock, [48, 128, 3]]  # 11 stage 1
 
   - [-1, 1, DWConv, [128, 3, 2, 1, False]]  # 12-P3/8

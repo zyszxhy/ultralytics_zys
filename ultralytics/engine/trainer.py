@@ -285,7 +285,10 @@ class BaseTrainer:
             self.lf = one_cycle(1, self.args.lrf, self.epochs)  # cosine 1->hyp['lrf']
         else:
             self.lf = lambda x: (1 - x / self.epochs) * (1.0 - self.args.lrf) + self.args.lrf  # linear
-        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=self.lf)
+        if self.args.multisteplr:
+            self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[100], gamma=0.1)
+        else:
+            self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=self.lf)
         self.stopper, self.stop = EarlyStopping(patience=self.args.patience), False
         self.resume_training(ckpt)
         self.scheduler.last_epoch = self.start_epoch - 1  # do not move
@@ -343,7 +346,7 @@ class BaseTrainer:
                     for j, x in enumerate(self.optimizer.param_groups):
                         # Bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                         x['lr'] = np.interp(
-                            ni, xi, [self.args.warmup_bias_lr if j == 0 else 0.0, x['initial_lr'] * self.lf(epoch)])
+                            ni, xi, [self.args.warmup_bias_lr if j%3 == 0 else 0.0, x['initial_lr'] * self.lf(epoch)])
                         if 'momentum' in x:
                             x['momentum'] = np.interp(ni, xi, [self.args.warmup_momentum, self.args.momentum])
 
@@ -658,6 +661,7 @@ class BaseTrainer:
             (torch.optim.Optimizer): The constructed optimizer.
         """
 
+        from ultralytics.nn.tasks import RTDETRDetectionModel
         g = [], [], []  # optimizer parameter groups
         bn = tuple(v for k, v in nn.__dict__.items() if 'Norm' in k)  # normalization layers, i.e. BatchNorm2d()
         if name == 'auto':
@@ -666,15 +670,81 @@ class BaseTrainer:
             name, lr, momentum = ('SGD', 0.01, 0.9) if iterations > 10000 else ('AdamW', lr_fit, 0.9)
             self.args.warmup_bias_lr = 0.0  # no higher than 0.01 for Adam
 
-        for module_name, module in model.named_modules():
-            for param_name, param in module.named_parameters(recurse=False):
-                fullname = f'{module_name}.{param_name}' if module_name else param_name
-                if 'bias' in fullname:  # bias (no decay)
-                    g[2].append(param)
-                elif isinstance(module, bn):  # weight (no decay)
-                    g[1].append(param)
-                else:  # weight (with decay)
-                    g[0].append(param)
+        multi_num = len(self.args.lr_mult_blockid)
+        if isinstance(model, RTDETRDetectionModel) and multi_num > 0:
+            hgnet = [], [], [], [], \
+                    [], [], [], [], \
+                    [], [], [], []
+            # stage1, stage2, stage3, stage4
+            # stage1bn, stage2bn, stage3bn, stage4bn,
+            # stage1bias, stage2bias, stage3bias, stage4bias
+            for module_name, module in model.named_modules():
+                for param_name, param in module.named_parameters(recurse=False):
+                    fullname = f'{module_name}.{param_name}' if module_name else param_name
+                    block_id = int(fullname.split('.')[1])
+                    flag = False
+                    for i in range(multi_num):
+                        if block_id in self.args.lr_mult_blockid[i]:
+                            if 'bias' in fullname:  # bias (no decay)
+                                hgnet[i+2*multi_num].append(param)
+                            elif isinstance(module, bn):  # weight (no decay)
+                                hgnet[i+multi_num].append(param)
+                            else:  # weight (with decay)
+                                hgnet[i].append(param)
+                            flag = True
+                            break
+                    if flag:
+                        continue
+
+                    if 'bias' in fullname:  # bias (no decay)
+                        g[2].append(param)
+                    elif isinstance(module, bn):  # weight (no decay)
+                        g[1].append(param)
+                    else:  # weight (with decay)
+                        g[0].append(param)
+            
+            if name in ('Adam', 'Adamax', 'AdamW', 'NAdam', 'RAdam'):
+                optimizer = getattr(optim, name, optim.Adam)(g[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+            elif name == 'RMSProp':
+                optimizer = optim.RMSprop(g[2], lr=lr, momentum=momentum)
+            elif name == 'SGD':
+                optimizer = optim.SGD(g[2], lr=lr, momentum=momentum, nesterov=True)
+            else:
+                raise NotImplementedError(
+                    f"Optimizer '{name}' not found in list of available optimizers "
+                    f'[Adam, AdamW, NAdam, RAdam, RMSProp, SGD, auto].'
+                    'To request support for addition optimizers please visit https://github.com/ultralytics/ultralytics.')
+
+            optimizer.add_param_group({'params': g[0], 'weight_decay': decay})  # add g0 with weight_decay
+            optimizer.add_param_group({'params': g[1], 'weight_decay': 0.0})  # add g1 (BatchNorm2d weights)
+
+            assert len(self.args.lr_mult_blockid) == len(self.args.lr_mult_list), 'the lenth of block group must be equal to the lenth of lr list!'
+            for i in range(len(self.args.lr_mult_list)):
+                optimizer.add_param_group({'params': hgnet[i+multi_num*2], 'lr': lr*self.args.lr_mult_list[i], 'weight_decay': 0.0})  # add g2 (Bias weights)
+                optimizer.add_param_group({'params': hgnet[i], 'lr': lr*self.args.lr_mult_list[i]})  # add g0 (others weights)
+                optimizer.add_param_group({'params': hgnet[i+multi_num], 'lr': 0.0, 'weight_decay': 0.0})  # add g1 (BatchNorm2d weights)
+                
+            len_g1, len_g0, len_g2 = 0, 0, 0
+            for i in range(multi_num):
+                len_g1 += len(hgnet[i+multi_num])
+                len_g0 += len(hgnet[i])
+                len_g2 += len(hgnet[i+2*multi_num])
+            LOGGER.info(
+                f"{colorstr('optimizer:')} {type(optimizer).__name__}(lr={lr}, momentum={momentum}) with parameter groups "
+                f'{len(g[1])+len_g1} weight(decay=0.0), \
+                {len(g[0])+len_g0} weight(decay={decay}), \
+                    {len(g[2])+len_g2} bias(decay=0.0)')
+            return optimizer
+        else:
+            for module_name, module in model.named_modules():
+                for param_name, param in module.named_parameters(recurse=False):
+                    fullname = f'{module_name}.{param_name}' if module_name else param_name
+                    if 'bias' in fullname:  # bias (no decay)
+                        g[2].append(param)
+                    elif isinstance(module, bn):  # weight (no decay)
+                        g[1].append(param)
+                    else:  # weight (with decay)
+                        g[0].append(param)
 
         if name in ('Adam', 'Adamax', 'AdamW', 'NAdam', 'RAdam'):
             optimizer = getattr(optim, name, optim.Adam)(g[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
