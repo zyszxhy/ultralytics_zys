@@ -36,7 +36,7 @@ class RTDETRTrainer(DetectionTrainer):
             model.load(weights)
         return model
 
-    def build_dataset(self, img_path, mode='val', batch=None):
+    def build_dataset(self, img_path, imgsz, mode='val', batch=None):
         """Build RTDETR Dataset
 
         Args:
@@ -46,7 +46,7 @@ class RTDETRTrainer(DetectionTrainer):
         """
         return RTDETRDataset(
             img_path=img_path,
-            imgsz=self.args.imgsz,
+            imgsz=imgsz,
             batch_size=batch,
             augment=mode == 'train',  # no augmentation
             hyp=self.args,

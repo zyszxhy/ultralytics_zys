@@ -27,7 +27,7 @@ class DetectionTrainer_m(BaseTrainer_m):
         ```
     """
 
-    def build_dataset(self, img_path, mode='train', batch=None):
+    def build_dataset(self, img_path_rgb, img_path_ir, mode='train', batch=None):
         """
         Build YOLO Dataset.
 
@@ -37,7 +37,7 @@ class DetectionTrainer_m(BaseTrainer_m):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
-        return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
+        return build_yolo_dataset(self.args, img_path_rgb, img_path_ir, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
 
     def get_dataloader(self, dataset_path_rgb, dataset_path_ir, batch_size=16, rank=0, mode='train'):
         """Construct and return dataloader."""

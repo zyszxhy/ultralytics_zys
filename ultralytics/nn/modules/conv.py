@@ -320,12 +320,12 @@ class Modal_norm(nn.Module):
         # mean_1, std_1 = mean_std(x1, dim=[2,3], keepdim=True)
         # x1_norm = (x1 - mean_1) / std_1
         x1_norm = self.norm(x1)
-        # mean_0, std_0 = mean_std(x0, dim=[2,3], keepdim=True)
-        mean_0_1, std_0_1 = self.instance_norm(x0)
+        mean_0, std_0 = mean_std(x0, dim=[2,3], keepdim=True)
+        # mean_0_1, std_0_1 = self.instance_norm(x0)
 
         x_mid = self.relu(self.wd(x0))
-        beta = self.wb(x_mid) + std_0_1
-        gama = self.wg(x_mid) + mean_0_1
+        beta = self.wb(x_mid) + std_0
+        gama = self.wg(x_mid) + mean_0
 
         return self.wq(x1_norm * gama + beta) + x0
     

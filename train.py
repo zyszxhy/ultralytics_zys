@@ -1,36 +1,15 @@
-from ultralytics import RTDETR_m
+# from ultralytics import RTDETR_m
 
-model = RTDETR_m('rtdetr-l_m_addnorm.yaml')
+# model = RTDETR_m('rtdetr-l_m_addnorm.yaml')
 
-model.train(data='VEDAI.yaml', 
-            epochs=120,
-            batch=8,
-            imgsz=640,
-            resume=False,
-            pretrained='/home/data/ZYS/pretrained_weights/rtdetr-l.pt',
-            # pretrained = None,
-            name='rtdetr_vedai_fold08_addnorm_2',
-            lr_mult_list=[],
-            lr_mult_blockid=[],
-            multisteplr=False,
-            # cos_lr=True,
-            # mosaic=0,
-            # hsv_h=0,
-            # hsv_s=0,
-            # hsv_v=0
-            )
-
-# from ultralytics import RTDETR, YOLO
-
-# model = RTDETR('rtdetr-l.yaml')
 # model.train(data='FLIR.yaml', 
 #             epochs=100,
+#             batch=4,
 #             imgsz=640,
-#             batch=8,
 #             resume=False,
 #             pretrained='/home/data/ZYS/pretrained_weights/rtdetr-l.pt',
-#             name='rtdetr_flir_rgb',
-#             # freeze=1,
+#             # pretrained = None,
+#             name='rtdetr_flir_addnorm2',
 #             lr_mult_list=[],
 #             lr_mult_blockid=[],
 #             multisteplr=False,
@@ -40,6 +19,28 @@ model.train(data='VEDAI.yaml',
 #             # hsv_s=0,
 #             # hsv_v=0
 #             )
+
+from ultralytics import RTDETR, YOLO
+
+model = RTDETR('rtdetr-l_sr.yaml') # 
+model.train(data='VEDAI.yaml', 
+            epochs=100,
+            imgsz_train=1024,
+            imgsz_val=512,
+            batch=8,
+            resume=False,
+            pretrained='/home/data/ZYS/pretrained_weights/rtdetr-l.pt',
+            name='rtdetr_vedai_fold01_rgb_sr',
+            # freeze=1,
+            lr_mult_list=[],
+            lr_mult_blockid=[],
+            multisteplr=False,
+            # cos_lr=True,
+            # mosaic=0,
+            # hsv_h=0,
+            # hsv_s=0,
+            # hsv_v=0
+            )
 
 # model = YOLO('/home/zhangyusi/ultralytics_zys/runs/detect/yolov8n_vedai_300/weights/last.pt')
 # model.train(data='VEDAI.yaml',

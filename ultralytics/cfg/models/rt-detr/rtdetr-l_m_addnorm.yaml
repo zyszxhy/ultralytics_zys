@@ -21,54 +21,54 @@ backbone:
   - [-1, 6, HGBlock, [96, 512, 3]]   # 7 stage 2
   # stage2 fusion
   - [[3, 7], 1, Modal_norm, [512]]  # 8 stage 2 rgb
-  - [[7, 3], 1, Modal_norm, [512]]  # 9 stage 2 ir
+  # - [[7, 3], 1, Modal_norm, [512]]  # 9 stage 2 ir
 
   # rgb stream stage3
-  - [8, 1, DWConv, [512, 3, 2, 1, False]]  # 10-P3/16 512
-  - [-1, 6, HGBlock, [192, 1024, 5, True, False]]  # 11 cm, c2, k, light, shortcut 1024
-  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 12 1024
-  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 13 stage 3 1024
+  - [8, 1, DWConv, [512, 3, 2, 1, False]]  # 10-P3/16 512 9
+  - [-1, 6, HGBlock, [192, 1024, 5, True, False]]  # 11 cm, c2, k, light, shortcut 1024 10
+  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 12 1024 11
+  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 13 stage 3 1024 12
   # ir stream stage3
-  - [9, 1, DWConv, [512, 3, 2, 1, False]]  # 14-P3/16
-  - [-1, 6, HGBlock, [192, 1024, 5, True, False]]  # 15 cm, c2, k, light, shortcut
-  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 16
-  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 17 stage 3
+  - [7, 1, DWConv, [512, 3, 2, 1, False]]  # 14-P3/16 13
+  - [-1, 6, HGBlock, [192, 1024, 5, True, False]]  # 15 cm, c2, k, light, shortcut 14
+  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 16 15
+  - [-1, 6, HGBlock, [192, 1024, 5, True, True]]  # 17 stage 3 16
   # stage3 fusion
-  - [[13, 17], 1, Modal_norm, [1024]]  # 18 stage 3 rgb
-  - [[17, 13], 1, Modal_norm, [1024]]  # 19 stage 3 ir
+  - [[12, 16], 1, Modal_norm, [1024]]  # 18 stage 3 rgb 17
+  # - [[17, 13], 1, Modal_norm, [1024]]  # 19 stage 3 ir
   
   # rgb stream stage4
-  - [18, 1, DWConv, [1024, 3, 2, 1, False]]  # 20-P4/32
-  - [-1, 6, HGBlock, [384, 2048, 5, True, False]]  # 21 stage 4
+  - [17, 1, DWConv, [1024, 3, 2, 1, False]]  # 20-P4/32 18
+  - [-1, 6, HGBlock, [384, 2048, 5, True, False]]  # 21 stage 4 19
   # ir stream stage4
-  - [19, 1, DWConv, [1024, 3, 2, 1, False]]  # 22-P4/32 1024
-  - [-1, 6, HGBlock, [384, 2048, 5, True, False]]  # 23 stage 4 2048
+  - [16, 1, DWConv, [1024, 3, 2, 1, False]]  # 22-P4/32 1024 20
+  - [-1, 6, HGBlock, [384, 2048, 5, True, False]]  # 23 stage 4 2048 21
 
   # fusion to head
-  - [[21, 23], 1, Modal_norm, [2048]] # 24 stage 4
+  - [[19, 21], 1, Modal_norm, [2048]] # 24 stage 4 22
 
 head:
-  - [-1, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 25 input_proj.2
-  - [-1, 1, AIFI, [1024, 8]]  # 26
-  - [-1, 1, Conv, [256, 1, 1]]   # 27, Y5, lateral_convs.0
+  - [-1, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 25 input_proj.2 23
+  - [-1, 1, AIFI, [1024, 8]]  # 26 24
+  - [-1, 1, Conv, [256, 1, 1]]   # 27, Y5, lateral_convs.0 25
 
-  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 28
-  - [18, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 29 input_proj.1
-  - [[-2, -1], 1, Concat, [1]]  # 30
-  - [-1, 3, RepC3, [256]]  # 31, fpn_blocks.0
-  - [-1, 1, Conv, [256, 1, 1]]   # 32, Y4, lateral_convs.1
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 28 26
+  - [17, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 29 input_proj.1 27
+  - [[-2, -1], 1, Concat, [1]]  # 30 28
+  - [-1, 3, RepC3, [256]]  # 31, fpn_blocks.0 29
+  - [-1, 1, Conv, [256, 1, 1]]   # 32, Y4, lateral_convs.1 30
 
-  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 33
-  - [8, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 34 input_proj.0
-  - [[-2, -1], 1, Concat, [1]]  # 35 cat backbone P4
-  - [-1, 3, RepC3, [256]]    # X3 (36), fpn_blocks.1 bs*256*80*80
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 33 31
+  - [8, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 34 input_proj.0 32
+  - [[-2, -1], 1, Concat, [1]]  # 35 cat backbone P4 33
+  - [-1, 3, RepC3, [256]]    # X3 (36), fpn_blocks.1 bs*256*80*80 34
 
-  - [-1, 1, Conv, [256, 3, 2]]   # 37, downsample_convs.0
-  - [[-1, 32], 1, Concat, [1]]  # 38 cat Y4
-  - [-1, 3, RepC3, [256]]    # F4 (39), pan_blocks.0 bs*256*40*40
+  - [-1, 1, Conv, [256, 3, 2]]   # 37, downsample_convs.0 35
+  - [[-1, 30], 1, Concat, [1]]  # 38 cat Y4 36
+  - [-1, 3, RepC3, [256]]    # F4 (39), pan_blocks.0 bs*256*40*40 37
 
-  - [-1, 1, Conv, [256, 3, 2]]   # 40, downsample_convs.1
-  - [[-1, 27], 1, Concat, [1]]  # 41 cat Y5
-  - [-1, 3, RepC3, [256]]    # F5 (42), pan_blocks.1 bs*256*20*20
+  - [-1, 1, Conv, [256, 3, 2]]   # 40, downsample_convs.1 38
+  - [[-1, 25], 1, Concat, [1]]  # 41 cat Y5 39
+  - [-1, 3, RepC3, [256]]    # F5 (42), pan_blocks.1 bs*256*20*20 40
 
-  - [[36, 39, 42], 1, RTDETRDecoder_m, [nc]]  # 43 Detect(P3, P4, P5)
+  - [[34, 37, 40], 1, RTDETRDecoder_m, [nc]]  # 43 Detect(P3, P4, P5) 41

@@ -244,6 +244,17 @@ class DetectionModel(BaseModel):
         self.names = {i: f'{i}' for i in range(self.yaml['nc'])}  # default names dict
         self.inplace = self.yaml.get('inplace', True)
 
+        # build super resolution brach
+        self.sr = self.yaml['sr']
+        self.factor = self.yaml['factor']
+        if self.sr:
+            # from models.deeplab import DeepLab
+            from ultralytics.nn.modules import DeepLab
+            self.model_up = DeepLab(3,self.yaml['c1'],self.yaml['c2'],factor=self.factor)#.cuda() #'if the size is m:192,768 l:256,1024 x:320 1280
+            # self.model_up = DeepLab(4,self.yaml['c1'],self.yaml['c2'],factor=factor)#.cuda() #'if the size is m:192,768 l:256,1024 x:320 1280
+            self.l1=self.yaml['l1']
+            self.l2=self.yaml['l2']
+        
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Segment, Pose)):
@@ -405,7 +416,10 @@ class RTDETRDetectionModel(DetectionModel):
             'batch_idx': batch_idx.to(img.device, dtype=torch.long).view(-1),
             'gt_groups': gt_groups}
 
-        preds = self.predict(img, batch=targets) if preds is None else preds
+        if self.training and self.sr:
+            preds, output_sr = self.predict(img, batch=targets) if preds is None else preds
+        else:
+            preds = self.predict(img, batch=targets) if preds is None else preds
         dec_bboxes, dec_scores, enc_bboxes, enc_scores, dn_meta = preds if self.training else preds[1]
         if dn_meta is None:
             dn_bboxes, dn_scores = None, None
@@ -421,6 +435,13 @@ class RTDETRDetectionModel(DetectionModel):
                               dn_bboxes=dn_bboxes,
                               dn_scores=dn_scores,
                               dn_meta=dn_meta)
+        
+        if self.training and self.sr:
+            sr_loss = 0.1*torch.nn.L1Loss()(output_sr, batch['img_ori'])
+            loss.update({f'loss_sr': sr_loss})
+            return sum(loss.values()), torch.as_tensor([loss[k].detach() for k in ['loss_giou', 'loss_class', 'loss_bbox', 'loss_sr']],
+                                                   device=img.device)
+
         # NOTE: There are like 12 losses in RTDETR, backward with all losses but only show the main three losses.
         return sum(loss.values()), torch.as_tensor([loss[k].detach() for k in ['loss_giou', 'loss_class', 'loss_bbox']],
                                                    device=img.device)
@@ -445,11 +466,14 @@ class RTDETRDetectionModel(DetectionModel):
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
-            y.append(x if m.i in self.save else None)  # save output
+            y.append(x if m.i in self.save+[self.l1, self.l2] else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
         head = self.model[-1]
         x = head([y[j] for j in head.f], batch)  # head inference
+        if self.training and self.sr:
+            output_sr = self.model_up(y[self.l1],y[self.l2])
+            return x, output_sr
         return x
 
 

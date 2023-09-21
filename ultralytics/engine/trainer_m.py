@@ -521,7 +521,7 @@ class BaseTrainer_m:
         """
         raise NotImplementedError('get_dataloader function not implemented in trainer')
 
-    def build_dataset(self, img_path, mode='train', batch=None):
+    def build_dataset(self, img_path_rgb, img_path_ir, mode='train', batch=None):
         """Build dataset"""
         raise NotImplementedError('build_dataset function not implemented in trainer')
 

@@ -879,23 +879,23 @@ def format_state_dict(csd):
                 my_state_dict[key_ir] = value
             
             elif layer_id>=4 and layer_id<=7:
-                layer_id_rgb = str(layer_id + 6)
-                layer_id_ir = str(layer_id + 10)
+                layer_id_rgb = str(layer_id + 5)
+                layer_id_ir = str(layer_id + 9)
                 key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
                 key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
                 my_state_dict[key_rgb] = value
                 my_state_dict[key_ir] = value
 
             elif layer_id>=8 and layer_id<=9:
-                layer_id_rgb = str(layer_id + 12)
-                layer_id_ir = str(layer_id + 14)
+                layer_id_rgb = str(layer_id + 10)
+                layer_id_ir = str(layer_id + 12)
                 key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
                 key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
                 my_state_dict[key_rgb] = value
                 my_state_dict[key_ir] = value
 
             elif layer_id>=10:
-                new_layer_id = str(layer_id + 15)
+                new_layer_id = str(layer_id + 13)
                 key = key.replace(str(layer_id), str(new_layer_id), 1)
                 my_state_dict[key] = value
         
