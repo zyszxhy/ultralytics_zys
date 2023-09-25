@@ -11,7 +11,7 @@ from .conv import Conv, DWConv, GhostConv, LightConv, RepConv
 from .transformer import TransformerBlock
 
 __all__ = ('DFL', 'HGBlock', 'HGStem', 'SPP', 'SPPF', 'C1', 'C2', 'C3', 'C2f', 'C3x', 'C3TR', 'C3Ghost',
-           'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3')
+           'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA')
 
 
 class DFL(nn.Module):
@@ -302,3 +302,122 @@ class BottleneckCSP(nn.Module):
         y1 = self.cv3(self.m(self.cv1(x)))
         y2 = self.cv2(x)
         return self.cv4(self.act(self.bn(torch.cat((y1, y2), 1))))
+
+
+# MLSDNet blocks
+
+class C2_5(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2//2, 'input output channel numbers wrong!'
+        self.dwconv1 = DWConv(c1//2, c1//2, 3, 2, 1, act='ReLU')
+        self.dwconv2 = DWConv(c1//2, c1//2, 3, 2, 1, act='ReLU')
+        self.CBR = Conv(c1//2, c1, 3, 1, None, 1, 1, 'ReLU')
+        self.Ghost = GhostConv(c1//2, c1, 3, 1, 1, 'ReLU')
+        self.BR = nn.Sequential(nn.BatchNorm2d(c1), nn.ReLU())
+
+    def forward(self, x):
+        _, c, _, _ = x.size()
+        x1 = x[:, :c//2, :, :]
+        x2 = x[:, c//2:, :, :]
+        x1 = self.CBR(self.dwconv1(x1))
+        x2 = self.BR(self.Ghost(self.dwconv2(x2)))
+        x_out = torch.cat((x1, x2), 1)
+        return self.channel_shuffle(x_out, 4)
+    
+    def channel_shuffle(self, x, groups=4):
+        batch_size, num_channels, height, width = x.size()
+        channels_per_group = num_channels // groups
+        # print(channels_per_group)
+        # reshape
+        # b, c, h, w =======>  b, g, c_per, h, w
+        x = x.view(batch_size, groups, channels_per_group, height, width)
+        x = torch.transpose(x, 1, 2).contiguous()
+        # flatten
+        x = x.view(batch_size, -1, height, width)
+        return x
+    
+
+class DP(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+        self.dconv1 = Conv(c1//4, c1//4, 3, 1, None, 1, 1, 'ReLU')
+        self.dconv2 = Conv(c1//4, c1//4, 3, 1, None, 1, 3, 'ReLU')
+        self.dconv3 = Conv(c1//4, c1//4, 3, 1, None, 1, 5, 'ReLU')
+        self.dconv4 = Conv(c1//4, c1//4, 3, 1, None, 1, 7, 'ReLU')
+
+        
+    def forward(self, x):
+        _, c, _, _ = x.size()
+        x1 = x[:, :c//4, :, :]
+        x2 = x[:, c//4:c//2, :, :]
+        x3 = x[:, c//2:c//4*3, :, :]
+        x4 = x[:, c//4*3:, :, :]
+        
+        x1 = self.dconv1(x1)
+        x2 = self.dconv2(x2)
+        x3 = self.dconv3(x3)
+        x4 = self.dconv4(x4)
+
+        return torch.cat((x1, x2, x3, x4), 1)
+
+class FA(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+        self.xavgpool = nn.AdaptiveAvgPool2d([1,None])
+        self.yavgpool = nn.AdaptiveAvgPool2d([None,1])
+        self.relu = nn.ReLU()
+        self.conv1 = nn.Conv2d(c1, c1, 1)
+        self.conv2 = nn.Conv2d(c1, c1, 1)
+        self.sigmoid1 = nn.Sigmoid()
+        self.sigmoid2 = nn.Sigmoid()
+        
+    def forward(self, x):
+        _, _, h, w = x.size()
+        wv = self.yavgpool(x)
+        wq = self.xavgpool(x)
+        wa = torch.cat((wv[:,:,:,0], wq[:,:,0,:]), -1)
+        wa = self.relu(wa)
+        wv = torch.unsqueeze(wa[:, :, :h], -1)
+        wq = torch.unsqueeze(wa[:, :, -w:], 2)
+        wv = self.sigmoid1(self.conv1(wv))
+        wq = self.sigmoid2(self.conv2(wq))
+
+        return (x*wv)*wq
+
+class CO(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+        self.convv = nn.Conv2d(c1, c1//2, 1)
+        self.convq = nn.Conv2d(c1, 1, 1)
+        self.softmax = nn.Softmax(1)
+        self.conv1 = nn.Conv2d(c1//2, c1, 1)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        bs, c, h, w = x.size()
+        wv = self.convv(x)
+        wq = self.convq(x)
+        wv = wv.reshape(bs, c//2, -1)
+        wq = wq.reshape(bs, -1, 1)
+        wq = self.softmax(wq)
+
+        wa = torch.unsqueeze(torch.matmul(wv, wq), -1)
+        wa = self.sigmoid(self.conv1(wa))
+
+        return wa*x
+    
+class ASA(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+        self.DP = DP(c1, c2)
+        self.FA = FA(c1, c2)
+        self.CO = CO(c1, c2)
+        
+    def forward(self, x):
+
+        return self.CO(self.FA(self.DP(x)))

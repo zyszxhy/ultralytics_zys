@@ -27,7 +27,7 @@ class DetectionTrainer(BaseTrainer):
         ```
     """
 
-    def build_dataset(self, img_path, mode='train', batch=None):
+    def build_dataset(self, img_path, imgsz, mode='train', batch=None):
         """
         Build YOLO Dataset.
 
@@ -37,7 +37,7 @@ class DetectionTrainer(BaseTrainer):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
-        return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
+        return build_yolo_dataset(self.args, img_path, imgsz, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
 
     def get_dataloader(self, dataset_path, imgsz, batch_size=16, rank=0, mode='train'):
         """Construct and return dataloader."""

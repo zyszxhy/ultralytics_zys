@@ -22,33 +22,38 @@
 
 from ultralytics import RTDETR, YOLO
 
-model = RTDETR('rtdetr-l_sr.yaml') # 
-model.train(data='VEDAI.yaml', 
-            epochs=100,
-            imgsz_train=1024,
-            imgsz_val=512,
-            batch=8,
-            resume=False,
-            pretrained='/home/data/ZYS/pretrained_weights/rtdetr-l.pt',
-            name='rtdetr_vedai_fold01_rgb_sr',
-            # freeze=1,
-            lr_mult_list=[],
-            lr_mult_blockid=[],
-            multisteplr=False,
-            # cos_lr=True,
-            # mosaic=0,
-            # hsv_h=0,
-            # hsv_s=0,
-            # hsv_v=0
-            )
-
-# model = YOLO('/home/zhangyusi/ultralytics_zys/runs/detect/yolov8n_vedai_300/weights/last.pt')
-# model.train(data='VEDAI.yaml',
-#             epochs=300,
-#             pretrained=False,    # '/home/zhangyusi/yolov8l.pt'
-#             name='yolov8n_vedai_300',
+# model = RTDETR('rtdetr-l_sr.yaml') # 
+# model.train(data='VEDAI.yaml', 
+#             epochs=100,
+#             imgsz_train=1024,
+#             imgsz_val=512,
+#             batch=8,
 #             resume=True,
-#             batch=2,
+#             pretrained='/home/data3/zys/pretrained_weights/rtdetr-l.pt',
+#             name='rtdetr_vedai_fold01_rgb_sr_3',
+#             # freeze=1,
+#             lr_mult_list=[],
+#             lr_mult_blockid=[],
+#             multisteplr=False,
+#             # cos_lr=True,
+#             # mosaic=0,
+#             # hsv_h=0,
+#             # hsv_s=0,
+#             # hsv_v=0
+#             )
+
+# VEDAI YOLOv8l
+
+# model = YOLO('yolov8l.pt')
+# model = YOLO('yolov8l.yaml')
+# model.train(data='VEDAI.yaml',
+#             epochs=100,
+#             name='yolov8l_vedai_ir_fold04',
+#             imgsz_train=640,
+#             imgsz_val=640,
+#             resume=True,
+#             pretrained='/home/data3/zys/pretrained_weights/yolov8l.pt',
+#             batch=8,
 #             optimizer='auto',
 #             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
 #             lrf=0.01,  # (float) final learning rate (lr0 * lrf)
@@ -57,4 +62,58 @@ model.train(data='VEDAI.yaml',
 #             warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
 #             warmup_momentum=0.8,  # (float) warmup initial momentum
 #             warmup_bias_lr=0.1,  # (float) warmup initial bias lr
+#             lr_mult_list=[],
+#             lr_mult_blockid=[],
+#             multisteplr=False,
+#             )
+
+
+# SAR_AIRcraft1.0 YOLOv8
+
+model = YOLO('yolov8n.yaml')
+model.train(data='SAR_AIRcraft.yaml',
+            epochs=300,
+            name='yolov8n_saraircraft',
+            imgsz_train=800,
+            imgsz_val=800,
+            resume=False,
+            pretrained='/home/zhangyusi/yolov8n.pt',
+            device=5,
+            batch=8,
+            optimizer='auto',
+            lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
+            lrf=0.01,  # (float) final learning rate (lr0 * lrf)
+            momentum=0.937,  # (float) SGD momentum/Adam beta1
+            weight_decay=0.0005,  # (float) optimizer weight decay 5e-4
+            warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
+            warmup_momentum=0.8,  # (float) warmup initial momentum
+            warmup_bias_lr=0.1,  # (float) warmup initial bias lr
+            lr_mult_list=[],
+            lr_mult_blockid=[],
+            multisteplr=False,
+            )
+
+# MLSDNet
+
+# model = YOLO('/home/zhangyusi/ultralytics_zys/runs/detect/mlsdnet_saraircraft3/weights/last.pt')
+# model.train(data='SAR_AIRcraft.yaml',
+#             epochs=1000,
+#             patience=300,
+#             name='mlsdnet_saraircraft',
+#             imgsz_train=800,
+#             imgsz_val=800,
+#             resume=True,
+#             pretrained=None,
+#             batch=32,
+#             optimizer='auto',
+#             lr0=0.0001,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
+#             lrf=0.01,  # (float) final learning rate (lr0 * lrf)
+#             momentum=0.937,  # (float) SGD momentum/Adam beta1
+#             weight_decay=0.0005,  # (float) optimizer weight decay 5e-4
+#             warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
+#             warmup_momentum=0.8,  # (float) warmup initial momentum
+#             warmup_bias_lr=0.1,  # (float) warmup initial bias lr
+#             lr_mult_list=[],
+#             lr_mult_blockid=[],
+#             multisteplr=False,
 #             )

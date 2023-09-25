@@ -7,6 +7,13 @@ scales: # model compound scaling constants, i.e. 'model=yolov8n-cls.yaml' will c
   # [depth, width, max_channels]
   l: [1.00, 1.00, 1024]
 
+l1: None
+l2: None
+c1: None
+c2: None
+sr: False
+factor: None
+
 backbone:
   # [from, repeats, module, args]
   - [-1, 1, HGStem, [32, 48]]  # 0-P2/4

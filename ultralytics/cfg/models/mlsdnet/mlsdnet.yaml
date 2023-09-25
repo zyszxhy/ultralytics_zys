@@ -1,0 +1,41 @@
+# Parameters
+nc: 7  # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov8n.yaml' will call yolov8.yaml with scale 'n'
+  l: [1.00, 1.00, 256]
+
+l1: None
+l2: None
+c1: None
+c2: None
+sr: False
+factor: None
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [16, 3, 2, None, 1, 1, 'ReLU']]  # 0-C1/2
+  - [-1, 1, C2_5, [32, 3, 2]]  # 1-C2/4
+  - [-1, 1, C2_5, [64, 3, 2]]  # 2-C3/8
+  - [-1, 1, C2_5, [128, 3, 2]]  # 3-C4/16
+  - [-1, 1, C2_5, [256, 3, 2]]  # 4-C5/32
+
+  - [2, 1, ASA, [64]] # 5-C3 
+  - [3, 1, ASA, [128]] # 6-C4
+  - [4, 1, ASA, [256]] # 7-C5 
+
+
+head:
+  - [-1, 1, Conv, [64, 1, 1, None, 1, 1, 'ReLU']]  # 8 M5
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 9 C5 for C4
+  - [6, 1, Conv, [64, 1, 1, None, 1, 1, 'ReLU']]  # 10
+  - [[-1, -2], 1, Add, [64]]  # 11 M4
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 12 C4 for C3
+  - [5, 1, Conv, [64, 1, 1, None, 1, 1, 'ReLU']]  # 13
+  - [[-1, -2], 1, Add, [64]]  # 14 M3
+
+  - [8, 1, Conv, [256, 1, 1, None, 1, 1, 'ReLU']] # 15 P5
+  - [11, 1, Conv, [128, 1, 1, None, 1, 1, 'ReLU']] # 16 P4
+  - [14, 1, Conv, [64, 1, 1, None, 1, 1, 'ReLU']] # 17 P3
+  
+
+  - [[17, 16, 15], 1, Detect, [nc]]  # 18 Detect(P3, P4, P5)

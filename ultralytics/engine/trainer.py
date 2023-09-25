@@ -523,7 +523,7 @@ class BaseTrainer:
         """Returns a NotImplementedError when the get_validator function is called."""
         raise NotImplementedError('get_validator function not implemented in trainer')
 
-    def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode='train'):
+    def get_dataloader(self, dataset_path, imgsz, batch_size=16, rank=0, mode='train'):
         """
         Returns dataloader derived from torch.data.Dataloader.
         """
