@@ -355,9 +355,10 @@ class BaseTrainer:
                 with torch.cuda.amp.autocast(self.amp):
                     batch = self.preprocess_batch(batch)
                     if self.model.sr:
+                        down_factor = int(self.args.imgsz_train / self.args.imgsz_val)
                         import torch.nn.functional as F
                         batch['img_ori'] = batch['img']
-                        batch['img'] = F.interpolate(batch['img'],size=[i//self.model.factor for i in batch['img'].size()[2:]], mode='bilinear', align_corners=True)
+                        batch['img'] = F.interpolate(batch['img'],size=[i//down_factor for i in batch['img'].size()[2:]], mode='bilinear', align_corners=True)
                     self.loss, self.loss_items = self.model(batch)
                     if RANK != -1:
                         self.loss *= world_size

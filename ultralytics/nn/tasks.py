@@ -80,9 +80,15 @@ class BaseModel(nn.Module):
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
-            y.append(x if m.i in self.save else None)  # save output
+            if self.training and self.sr:
+                y.append(x if m.i in self.save+[self.l1, self.l2] else None)  # save output
+            else:
+                y.append(x if m.i in self.save else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
+        if self.training and self.sr:
+            output_sr = self.model_up(y[self.l1],y[self.l2])
+            return x, output_sr
         return x
 
     def _predict_augment(self, x):
@@ -203,8 +209,8 @@ class BaseModel(nn.Module):
         else:
             model = weights.model
             csd = model.float().state_dict()
-            csd = format_state_dict(csd)    # 加载预训练权重
         # model = weights['model'] if isinstance(weights, dict) else weights  # torchvision models are not dicts
+        csd = format_state_dict(csd)    # 加载预训练权重
         csd = intersect_dicts(csd, self.state_dict())  # intersect
         self.load_state_dict(csd, strict=False)  # load
         if verbose:
@@ -221,8 +227,12 @@ class BaseModel(nn.Module):
         if not hasattr(self, 'criterion'):
             self.criterion = self.init_criterion()
 
-        preds = self.forward(batch['img']) if preds is None else preds
-        return self.criterion(preds, batch)
+        if self.training and self.sr:
+            preds, output_sr = self.forward(batch['img']) if preds is None else preds
+        else:
+            preds = self.forward(batch['img']) if preds is None else preds
+            output_sr = None
+        return self.criterion(preds, batch, output_sr)
 
     def init_criterion(self):
         raise NotImplementedError('compute_loss() needs to be implemented by task heads')
@@ -261,7 +271,10 @@ class DetectionModel(BaseModel):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             forward = lambda x: self.forward(x)[0] if isinstance(m, (Segment, Pose)) else self.forward(x)
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
+            if self.sr:
+                m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))[0]])  # forward
+            else:
+                m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
             m.bias_init()  # only run once
         else:
@@ -437,7 +450,8 @@ class RTDETRDetectionModel(DetectionModel):
                               dn_meta=dn_meta)
         
         if self.training and self.sr:
-            sr_loss = 1.5*torch.nn.L1Loss()(output_sr, batch['img_ori'])    # 0.1*
+            sr_gain = self.args.sr
+            sr_loss = sr_gain*torch.nn.L1Loss()(output_sr, batch['img_ori'])    # 0.1*
             loss.update({f'loss_sr': sr_loss})
             return sum(loss.values()), torch.as_tensor([loss[k].detach() for k in ['loss_giou', 'loss_class', 'loss_bbox', 'loss_sr']],
                                                    device=img.device)
@@ -842,7 +856,16 @@ def format_state_dict(csd):
     my_state_dict = OrderedDict()
 
     for key, value in csd.items():
-        newkey = 'model.' + key
-        my_state_dict[newkey] = value
+        layer_id = int(key.split('.')[1])
+
+        if layer_id>=0 and layer_id<=9:
+            newkey = key
+            my_state_dict[newkey] = value
+        
+        elif layer_id>=10:
+            new_layer_id = str(layer_id + 0)
+            key = key.replace(str(layer_id), str(new_layer_id), 1)
+            newkey = key
+            my_state_dict[newkey] = value
         
     return my_state_dict

@@ -152,9 +152,12 @@ class v8DetectionLoss:
             # pred_dist = (pred_dist.view(b, a, c // 4, 4).softmax(2) * self.proj.type(pred_dist.dtype).view(1, 1, -1, 1)).sum(2)
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
-    def __call__(self, preds, batch):
+    def __call__(self, preds, batch, output_sr=None):
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
-        loss = torch.zeros(3, device=self.device)  # box, cls, dfl
+        if output_sr is None:
+            loss = torch.zeros(3, device=self.device)  # box, cls, dfl
+        else:
+            loss = torch.zeros(4, device=self.device)  # box, cls, dfl, sr
         feats = preds[1] if isinstance(preds, tuple) else preds
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
             (self.reg_max * 4, self.nc), 1)
@@ -195,6 +198,10 @@ class v8DetectionLoss:
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
         loss[2] *= self.hyp.dfl  # dfl gain
+
+        if output_sr is not None:
+            loss[3] = torch.nn.L1Loss()(output_sr, batch['img_ori'])
+            loss[3] *= self.hyp.sr  # sr gain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
 

@@ -73,9 +73,11 @@ from ultralytics import RTDETR, YOLO
 model = YOLO('yolov8n.yaml')
 model.train(data='SAR_AIRcraft.yaml',
             epochs=300,
-            name='yolov8n_saraircraft',
-            imgsz_train=800,
+            patience=100,
+            name='yolov8n_sr_saraircraft',
+            imgsz_train=1600,
             imgsz_val=800,
+            sr=15,
             resume=False,
             pretrained='/home/zhangyusi/yolov8n.pt',
             device=5,
@@ -95,16 +97,17 @@ model.train(data='SAR_AIRcraft.yaml',
 
 # MLSDNet
 
-# model = YOLO('/home/zhangyusi/ultralytics_zys/runs/detect/mlsdnet_saraircraft3/weights/last.pt')
+# model = YOLO('yolov8n_asa.yaml')
 # model.train(data='SAR_AIRcraft.yaml',
-#             epochs=1000,
-#             patience=300,
-#             name='mlsdnet_saraircraft',
+#             epochs=300,
+#             patience=100,
+#             name='yolov8n_asa_saraircraft',
 #             imgsz_train=800,
 #             imgsz_val=800,
-#             resume=True,
-#             pretrained=None,
-#             batch=32,
+#             device=4,
+#             resume=False,
+#             pretrained='/home/zhangyusi/yolov8n.pt',
+#             batch=8,
 #             optimizer='auto',
 #             lr0=0.0001,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
 #             lrf=0.01,  # (float) final learning rate (lr0 * lrf)
