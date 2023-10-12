@@ -12,13 +12,6 @@ scales: # model compound scaling constants, i.e. 'model=yolov8n.yaml' will call 
   x: [1.00, 1.25, 512]   # YOLOv8x summary: 365 layers, 68229648 parameters, 68229632 gradients, 258.5 GFLOPs
 
 
-# l1: 2
-# l2: 8
-# c1: 32
-# c2: 256
-# sr: True
-# factor: 2
-
 l1: None
 l2: None
 c1: None
@@ -31,31 +24,40 @@ backbone:
   # [from, repeats, module, args]
   - [-1, 1, Conv, [64, 3, 2]]  # 0-P1/2
   - [-1, 1, Conv, [128, 3, 2]]  # 1-P2/4
-  - [-1, 3, C2f, [128, True]]
+  - [-1, 3, C2f, [128, True]] # 2
   - [-1, 1, Conv, [256, 3, 2]]  # 3-P3/8
-  - [-1, 6, C2f, [256, True]]
+  - [-1, 6, C2f, [256, True]] # 4
   - [-1, 1, Conv, [512, 3, 2]]  # 5-P4/16
-  - [-1, 6, C2f, [512, True]]
+  - [-1, 6, C2f, [512, True]] # 6
   - [-1, 1, Conv, [1024, 3, 2]]  # 7-P5/32
-  - [-1, 3, C2f, [1024, True]]
+  - [-1, 3, C2f, [1024, True]]  # 8
   - [-1, 1, SPPF, [1024, 5]]  # 9
+
+
+  - [4, 1, DCNv2, [256]] # 10-P3 
+  - [-1, 1, GAMAttention, [256]]  # 11 (P3/8-small)
+  - [6, 1, DCNv2, [512]] # 12-P4
+  - [-1, 1, GAMAttention, [512]]  # 13 (P4/16-small)
+  - [9, 1, DCNv2, [1024]] # 14-P5 
+  - [-1, 1, GAMAttention, [1024]]  # 15 (P3/32-small)
 
 # YOLOv8.0n head
 head:
-  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
-  - [[-1, 6], 1, Concat, [1]]  # cat backbone P4
-  - [-1, 3, C2f, [512]]  # 12
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 16
+  - [[-1, 13], 1, Concat, [1]]  # 17 cat backbone P4
+  - [-1, 3, C2f, [512]]  # 18
 
-  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
-  - [[-1, 4], 1, Concat, [1]]  # cat backbone P3
-  - [-1, 3, C2f, [256]]  # 15 (P3/8-small)
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]  # 19
+  - [[-1, 11], 1, Concat, [1]]  # 20 cat backbone P3
+  - [-1, 3, C2f, [256]]  # 21 (P3/8-small)
 
-  - [-1, 1, Conv, [256, 3, 2]]
-  - [[-1, 12], 1, Concat, [1]]  # cat head P4
-  - [-1, 3, C2f, [512]]  # 18 (P4/16-medium)
+  # - [-1, 1, Conv, [256, 3, 2]]  # 19
+  # - [[-1, 15], 1, Concat, [1]]  # 20 cat head P4
+  # - [-1, 3, C2f, [512]]  # 21 (P4/16-medium)
 
-  - [-1, 1, Conv, [512, 3, 2]]
-  - [[-1, 9], 1, Concat, [1]]  # cat head P5
-  - [-1, 3, C2f, [1024]]  # 21 (P5/32-large)
+  # - [-1, 1, Conv, [512, 3, 2]]  # 22
+  # - [[-1, 12], 1, Concat, [1]]  # 23 cat head P5
+  # - [-1, 3, C2f, [1024]]  # 24 (P5/32-large)
 
-  - [[15, 18, 21], 1, Detect, [nc]]  # Detect(P3, P4, P5)
+  # - [[18, 21, 24], 1, Detect, [nc]]  # Detect(P3, P4, P5)
+  - [[21], 1, Detect, [nc]]  # Detect(P3, P4, P5)

@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add, Modal_norm)
+                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add, Modal_norm, GD_Multimodal, DevideOutputs_gd)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -23,6 +23,7 @@ try:
 except ImportError:
     thop = None
 
+import operator as op
 
 class BaseModel_m(nn.Module):
     """
@@ -74,18 +75,28 @@ class BaseModel_m(nn.Module):
             (torch.Tensor): The last output of the model.
         """
         y, dt = [], []  # outputs
+        x = x_rgb
         for m in self.model:
             if m.f != -1:  # if not from previous layer
                 if m.f == -4:
                     x = x_ir
+                elif op.eq(m.f,[-1, -4]):
+                    x = [x, x_ir]
                 else:
-                    x = y[m.f] if isinstance(m.f, int) else [x_rgb if j == -1 else y[j] for j in m.f]  # from earlier layers
+                    x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
             x = m(x)  # run
-            y.append(x if m.i in self.save else None)  # save output
+            if self.training and self.sr:
+                y.append(x if m.i in self.save+[self.l1, self.l2] else None)  # save output
+            else:
+                y.append(x if m.i in self.save else None)  # save output
+            # y.append(x if m.i in self.save else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
+        if self.training and self.sr:
+            output_sr = self.model_up(y[self.l1],y[self.l2])
+            return x, output_sr
         return x
 
     def _predict_augment(self, x_rgb, x_ir):
@@ -220,8 +231,13 @@ class BaseModel_m(nn.Module):
         if not hasattr(self, 'criterion'):
             self.criterion = self.init_criterion()
 
-        preds = self.forward(batch['img_rgb'], batch['img_ir']) if preds is None else preds
-        return self.criterion(preds, batch)
+        if self.training and self.sr:
+            preds, output_sr = self.forward(batch['img_rgb'], batch['img_ir']) if preds is None else preds
+        else:
+            preds = self.forward(batch['img_rgb'], batch['img_ir']) if preds is None else preds
+            output_sr = None
+        # preds = self.forward(batch['img_rgb'], batch['img_ir']) if preds is None else preds
+        return self.criterion(preds, batch, output_sr)
 
     def init_criterion(self):
         raise NotImplementedError('compute_loss() needs to be implemented by task heads')
@@ -243,12 +259,27 @@ class DetectionModel_m(BaseModel_m):
         self.names = {i: f'{i}' for i in range(self.yaml['nc'])}  # default names dict
         self.inplace = self.yaml.get('inplace', True)
 
+        # build super resolution brach
+        self.sr = self.yaml['sr']
+        self.factor = self.yaml['factor']
+        if self.sr:
+            # from models.deeplab import DeepLab
+            from ultralytics.nn.modules import DeepLab
+            self.model_up = DeepLab(3,self.yaml['c1'],self.yaml['c2'],factor=self.factor)#.cuda() #'if the size is m:192,768 l:256,1024 x:320 1280
+            # self.model_up = DeepLab(4,self.yaml['c1'],self.yaml['c2'],factor=factor)#.cuda() #'if the size is m:192,768 l:256,1024 x:320 1280
+            self.l1=self.yaml['l1']
+            self.l2=self.yaml['l2']
+        
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Segment, Pose)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             forward = lambda x: self.forward(x,x)[0] if isinstance(m, (Segment, Pose)) else self.forward(x,x)
+            if self.sr:
+                m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))[0]])  # forward
+            else:
+                m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
             m.bias_init()  # only run once
@@ -461,7 +492,6 @@ class RTDETRDetectionModel_m(DetectionModel_m):
         Returns:
             (torch.Tensor): The last output of the model.
         """
-        import operator as op
         y, dt = [], []  # outputs
         x = x_rgb
         for m in self.model[:-1]:  # except the head part
@@ -685,6 +715,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
                  BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3):
             c1, c2 = ch[f], args[0]
+            if f == -4:
+                c1 = 3
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
 
@@ -692,6 +724,14 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3):
                 args.insert(2, n)  # number of repeats
                 n = 1
+        elif m is GD_Multimodal:
+            c1 = [ch[in_num] for in_num in f]
+            c2 = c1[-3:]
+            args = [c1, c2]
+        elif m is DevideOutputs_gd:
+            c1 = ch[f]
+            c2 = c1[args[0]]
+            # args = args
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in (HGStem, HGBlock):
@@ -870,32 +910,32 @@ def format_state_dict(csd):
             #     key = key.replace(str(layer_id), str(new_layer_id), 1)
             #     my_state_dict[key] = value
 
-            if layer_id>=0 and layer_id<=3:
+            if layer_id>=0 and layer_id<=4:
                 layer_id_rgb = str(layer_id)
-                layer_id_ir = str(layer_id + 4)
+                layer_id_ir = str(layer_id + 10)
                 key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
                 key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
                 my_state_dict[key_rgb] = value
                 my_state_dict[key_ir] = value
             
-            elif layer_id>=4 and layer_id<=7:
-                layer_id_rgb = str(layer_id + 5)
-                layer_id_ir = str(layer_id + 9)
+            elif layer_id>=5 and layer_id<=6:
+                layer_id_rgb = str(layer_id + 0)
+                layer_id_ir = str(layer_id + 10)
                 key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
                 key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
                 my_state_dict[key_rgb] = value
                 my_state_dict[key_ir] = value
 
-            elif layer_id>=8 and layer_id<=9:
-                layer_id_rgb = str(layer_id + 10)
-                layer_id_ir = str(layer_id + 12)
+            elif layer_id>=7 and layer_id<=9:
+                layer_id_rgb = str(layer_id + 0)
+                layer_id_ir = str(layer_id + 10)
                 key_rgb = key.replace(str(layer_id), str(layer_id_rgb), 1)
                 key_ir = key.replace(str(layer_id), str(layer_id_ir), 1)
                 my_state_dict[key_rgb] = value
                 my_state_dict[key_ir] = value
 
             elif layer_id>=10:
-                new_layer_id = str(layer_id + 13)
+                new_layer_id = str(layer_id + 14)
                 key = key.replace(str(layer_id), str(new_layer_id), 1)
                 my_state_dict[key] = value
         

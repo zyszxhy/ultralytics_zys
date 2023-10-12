@@ -10,7 +10,8 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment, C2_5, ASA, Add, GDNeck, DevideOutputs_gd)
+                                    RTDETRDecoder, Segment, C2_5, ASA, Add, GDNeck, DevideOutputs_gd, DP, GDNeck_P3,
+                                    DCNv2, DP_DCNv2, GAMAttention)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -695,7 +696,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
                  BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3,
-                 C2_5, ASA):
+                 C2_5, ASA, DP, DCNv2, DP_DCNv2, GAMAttention):
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
@@ -707,6 +708,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is GDNeck:
             c1 = [ch[in_num] for in_num in f]
             c2 = [c1[-3]//2, c1[-2]//2, c1[-1]//2]
+            args = [c1, c2]
+        elif m is GDNeck_P3:
+            c1 = [ch[in_num] for in_num in f]
+            c2 = c1[-3]//2
             args = [c1, c2]
         elif m is DevideOutputs_gd:
             c1 = ch[f]

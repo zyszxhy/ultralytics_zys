@@ -66,6 +66,16 @@ class BboxLoss(nn.Module):
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
+        # # WIoU
+        # iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, WIoU=True,scale=True)
+        # if type(iou) is tuple:
+        #     if len(iou) == 2:
+        #         loss_iou = ((1.0 - iou[0]) * iou[1].detach() * weight).sum() / target_scores_sum
+        #     else:
+        #         loss_iou = (iou[0] * iou[1] * weight).sum() / target_scores_sum
+        # else:
+        #     loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+
         # DFL loss
         if self.use_dfl:
             target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max)

@@ -3,5 +3,6 @@
 from ultralytics.models.yolo import classify, detect, pose, segment
 
 from .model import YOLO
+from .model_m import YOLO_m
 
-__all__ = 'classify', 'segment', 'detect', 'pose', 'YOLO'
+__all__ = 'classify', 'segment', 'detect', 'pose', 'YOLO', 'YOLO_m'

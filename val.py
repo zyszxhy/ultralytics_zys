@@ -1,9 +1,11 @@
 from ultralytics import YOLO
 
-model = YOLO('/home/zhangyusi/ultralytics_zys/runs/detect/yolov8n_saraircraft/weights/best.pt')
+model = YOLO('/home/zhangyusi/FenghuoCup/yolov8s_det3_sar_bs32_e300/weights/best.pt')
 data = 'SAR_AIRcraft.yaml'
 model.val(data=data,
+          split='test',
+          project='FenghuoCup',
           imgsz_val=800,
-          batch=1,
+          batch=2,
           save_json=True,
           device=6)

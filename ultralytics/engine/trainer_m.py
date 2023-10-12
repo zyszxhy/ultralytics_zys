@@ -245,21 +245,23 @@ class BaseTrainer_m:
 
         # Check imgsz
         gs = max(int(self.model.stride.max() if hasattr(self.model, 'stride') else 32), 32)  # grid size (max stride)
-        self.args.imgsz = check_imgsz(self.args.imgsz, stride=gs, floor=gs, max_dim=1)
+        # self.args.imgsz = check_imgsz(self.args.imgsz, stride=gs, floor=gs, max_dim=1)
+        self.args.imgsz_train = check_imgsz(self.args.imgsz_train, stride=gs, floor=gs, max_dim=1)
+        self.args.imgsz_val = check_imgsz(self.args.imgsz_val, stride=gs, floor=gs, max_dim=1)
 
         # Batch size
         if self.batch_size == -1:
             if RANK == -1:  # single-GPU only, estimate best batch size
-                self.args.batch = self.batch_size = check_train_batch_size(self.model, self.args.imgsz, self.amp)
+                self.args.batch = self.batch_size = check_train_batch_size(self.model, self.args.imgsz_train, self.amp)
             else:
                 SyntaxError('batch=-1 to use AutoBatch is only available in Single-GPU training. '
                             'Please pass a valid batch size value for Multi-GPU DDP training, i.e. batch=16')
 
         # Dataloaders
         batch_size = self.batch_size // max(world_size, 1)
-        self.train_loader = self.get_dataloader(self.trainset_rgb, self.trainset_ir, batch_size=batch_size, rank=RANK, mode='train')
+        self.train_loader = self.get_dataloader(self.trainset_rgb, self.trainset_ir, self.args.imgsz_train, batch_size=batch_size, rank=RANK, mode='train')
         if RANK in (-1, 0):
-            self.test_loader = self.get_dataloader(self.testset_rgb, self.testset_ir, batch_size=batch_size * 2, rank=-1, mode='val')
+            self.test_loader = self.get_dataloader(self.testset_rgb, self.testset_ir, self.args.imgsz_val, batch_size=batch_size * 2, rank=-1, mode='val')
             self.validator = self.get_validator()
             metric_keys = self.validator.metrics.keys + self.label_loss_items(prefix='val')
             self.metrics = dict(zip(metric_keys, [0] * len(metric_keys)))  # TODO: init metrics for plot_results()?

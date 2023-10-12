@@ -4,7 +4,7 @@ from copy import copy
 
 import numpy as np
 
-from ultralytics.data import build_dataloader, build_yolo_dataset
+from ultralytics.data import build_dataloader, build_yolo_dataset_m
 from ultralytics.engine.trainer_m import BaseTrainer_m
 from ultralytics.models import yolo
 from ultralytics.nn.tasks_m import DetectionModel_m
@@ -27,7 +27,7 @@ class DetectionTrainer_m(BaseTrainer_m):
         ```
     """
 
-    def build_dataset(self, img_path_rgb, img_path_ir, mode='train', batch=None):
+    def build_dataset(self, img_path_rgb, img_path_ir, imgsz, mode='train', batch=None):
         """
         Build YOLO Dataset.
 
@@ -37,13 +37,13 @@ class DetectionTrainer_m(BaseTrainer_m):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
-        return build_yolo_dataset(self.args, img_path_rgb, img_path_ir, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
+        return build_yolo_dataset_m(self.args, img_path_rgb, img_path_ir, imgsz, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
 
-    def get_dataloader(self, dataset_path_rgb, dataset_path_ir, batch_size=16, rank=0, mode='train'):
+    def get_dataloader(self, dataset_path_rgb, dataset_path_ir, imgsz, batch_size=16, rank=0, mode='train'):
         """Construct and return dataloader."""
         assert mode in ['train', 'val']
         with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
-            dataset = self.build_dataset(dataset_path_rgb, dataset_path_ir, mode, batch_size)
+            dataset = self.build_dataset(dataset_path_rgb, dataset_path_ir, imgsz, mode, batch_size)
         shuffle = mode == 'train'
         if getattr(dataset, 'rect', False) and shuffle:
             LOGGER.warning("WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")

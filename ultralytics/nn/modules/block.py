@@ -7,11 +7,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, DCNv2
 from .transformer import TransformerBlock
 
 __all__ = ('DFL', 'HGBlock', 'HGStem', 'SPP', 'SPPF', 'C1', 'C2', 'C3', 'C2f', 'C3x', 'C3TR', 'C3Ghost',
-           'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA')
+           'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA', 'DP', 'DP_DCNv2')
 
 
 class DFL(nn.Module):
@@ -336,8 +336,7 @@ class C2_5(nn.Module):
         # flatten
         x = x.view(batch_size, -1, height, width)
         return x
-    
-
+  
 class DP(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
         super().__init__()
@@ -421,3 +420,27 @@ class ASA(nn.Module):
     def forward(self, x):
 
         return self.CO(self.FA(self.DP(x)))
+
+class DP_DCNv2(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+        self.dcn1 = DCNv2(c1//4, c1//4, 3, 1, 1, None, True)
+        self.dcn2 = DCNv2(c1//4, c1//4, 3, 1, 1, None, True)
+        self.dcn3 = DCNv2(c1//4, c1//4, 3, 1, 1, None, True)
+        self.dcn4 = DCNv2(c1//4, c1//4, 3, 1, 1, None, True)
+
+        
+    def forward(self, x):
+        _, c, _, _ = x.size()
+        x1 = x[:, :c//4, :, :]
+        x2 = x[:, c//4:c//2, :, :]
+        x3 = x[:, c//2:c//4*3, :, :]
+        x4 = x[:, c//4*3:, :, :]
+        
+        x1 = self.dcn1(x1)
+        x2 = self.dcn2(x2)
+        x3 = self.dcn3(x3)
+        x4 = self.dcn4(x4)
+
+        return torch.cat((x1, x2, x3, x4), 1)

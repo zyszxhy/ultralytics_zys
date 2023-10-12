@@ -1053,7 +1053,7 @@ class GDNeck(nn.Module):
         assert channel_in_list is not None        
         self.fusion_in = sum(channel_in_list)
 
-        if self.fusion_in == 480:
+        if self.fusion_in == 480:   # n
             block = RepVGGBlock
             rep = 'RepBlock'
 
@@ -1073,7 +1073,7 @@ class GDNeck(nn.Module):
             self.mlp_ratios = 1
             self.attn_ratios = 2
             
-        elif self.fusion_in == 960:
+        elif self.fusion_in == 960: # s
             block = RepVGGBlock
             rep = 'RepBlock'
 
@@ -1094,7 +1094,7 @@ class GDNeck(nn.Module):
             self.attn_ratios = 2
 
 
-        elif self.fusion_in == 1440:
+        elif self.fusion_in == 1184:    # m
             block = BottleRep
             rep = 'BepC3'
 
@@ -1115,7 +1115,7 @@ class GDNeck(nn.Module):
             self.attn_ratios = 2
         
 
-        elif self.fusion_in == 1920:
+        elif self.fusion_in == 1408:    # l
             block = BottleRep
             rep = 'BepC3'
             
@@ -1310,3 +1310,449 @@ class DevideOutputs_gd(nn.Module):
 
     def forward(self, x):
         return x[self.n]
+
+
+class GD_Multimodal(nn.Module):
+    def __init__(
+            self,
+            channel_in_list=[128, 256, 512, 1024, 256, 512, 1024],
+            channel_out = [256, 512, 1024]
+    ):
+        super().__init__()
+        
+        assert channel_in_list is not None        
+        self.fusion_in = sum(channel_in_list[:4])
+
+        if self.fusion_in == 480:   # n
+            block = RepVGGBlock
+            rep = 'RepBlock'
+
+            self.embed_dim_p = 192
+            self.fuse_block_num = 3
+            self.trans_channels = [128, 64, 128, 256]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 4
+            self.csp_e = None
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 2
+            self.embed_dim_n = 352
+            self.key_dim = 8
+            self.num_heads = 4
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+            
+        elif self.fusion_in == 960: # s
+            block = RepVGGBlock
+            rep = 'RepBlock'
+
+            self.embed_dim_p = 256
+            self.fuse_block_num = 3
+            self.trans_channels = [256, 128, 256, 512]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 4
+            self.csp_e = None
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 2
+            self.embed_dim_n = 704
+            self.key_dim = 8
+            self.num_heads = 4
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+
+        elif self.fusion_in == 1184:    # m
+            block = BottleRep
+            rep = 'BepC3'
+
+            self.embed_dim_p = 384
+            self.fuse_block_num = 3
+            self.trans_channels = [384, 192, 384, 512]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 7
+            self.csp_e = float(2) / 3
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 2
+            self.embed_dim_n = 1088
+            self.key_dim = 8
+            self.num_heads = 4
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+       
+        elif self.fusion_in == 1408:    # l
+            block = BottleRep
+            rep = 'BepC3'
+            
+            self.embed_dim_p = 384
+            self.fuse_block_num = 3
+            self.trans_channels = [512, 256, 512, 512]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 12
+            self.csp_e = float(1) / 2
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 3
+            self.embed_dim_n = 1280
+            self.key_dim = 8
+            self.num_heads = 8
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+        
+        inj_block = InjectionMultiSum_Auto_pool
+        
+        # low
+        self.low_FAM = SimFusion_4in()
+        self.low_IFM = nn.Sequential(
+                Conv(self.fusion_in, self.embed_dim_p, kernel_size=1, stride=1, padding=0),
+                *[block(self.embed_dim_p, self.embed_dim_p) for _ in range(self.fuse_block_num)],
+                Conv(self.embed_dim_p, sum(self.trans_channels[0:2]), kernel_size=1, stride=1, padding=0),
+        )
+        
+        # self.reduce_layer_c5 = SimConv(
+        #         in_channels=channel_in_list[3],  # C5 1024
+        #         out_channels=channel_in_list[1],  # C3 256
+        #         kernel_size=1,
+        #         stride=1
+        # )
+        # self.LAF_p4 = SimFusion_3in(
+        #         in_channel_list=[channel_in_list[2], channel_in_list[2]],  # C4 512, 512
+        #         out_channels=channel_in_list[1],  # C3 256
+        # )
+        self.Inject_p4 = inj_block(channel_in_list[2], channel_in_list[2], norm_cfg=self.norm_cfg,
+                                   activations=nn.ReLU6)    # C4
+        
+        if rep == 'RepBlock':
+            self.Rep_p4 = RepBlock(
+                    in_channels=channel_in_list[2],  # C4 512
+                    out_channels=channel_in_list[2],  # C4 512
+                    n=self.num_repeats,
+                    block=block
+            )
+        elif rep == 'BepC3':
+            self.Rep_p4 = BepC3(
+                    in_channels=channel_in_list[2],  # C3 512
+                    out_channels=channel_in_list[2],  # C3 512
+                    n=self.num_repeats,
+                    e=self.csp_e,
+                    block=block
+            )
+        
+        # self.reduce_layer_p4 = SimConv(
+        #         in_channels=channel_in_list[1],  # C3 256
+        #         out_channels=channel_in_list[0],  # C2 128
+        #         kernel_size=1,
+        #         stride=1
+        # )
+        # self.LAF_p3 = SimFusion_3in(
+        #         in_channel_list=[channel_in_list[1], channel_in_list[1]],  # C3 C3 512, 256
+        #         out_channels=channel_in_list[0],  # C2 256
+        # )
+        self.Inject_p3 = inj_block(channel_in_list[1], channel_in_list[1], norm_cfg=self.norm_cfg,
+                                   activations=nn.ReLU6)    # C3
+        
+        if rep == 'RepBlock':
+            self.Rep_p3 = RepBlock(
+                in_channels=channel_in_list[1],  # C3 256
+                out_channels=channel_in_list[1],  # C3 256
+                n=self.num_repeats,
+                block=block
+            )
+        elif rep == 'BepC3':
+            self.Rep_p3 = BepC3(
+                in_channels=channel_in_list[1],  # C3 256
+                out_channels=channel_in_list[1],  # C3 256
+                n=self.num_repeats,
+                e=self.csp_e,
+                block=block
+            )
+
+        
+        # high
+        self.high_FAM = PyramidPoolAgg(stride=self.c2t_stride, pool_mode=self.pool_mode)
+        dpr = [x.item() for x in torch.linspace(0, self.drop_path_rate, self.depths)]
+        self.high_IFM = TopBasicLayer(
+                block_num=self.depths,
+                embedding_dim=self.embed_dim_n,
+                key_dim=self.key_dim,
+                num_heads=self.num_heads,
+                mlp_ratio=self.mlp_ratios,
+                attn_ratio=self.attn_ratios,
+                drop=0, attn_drop=0,
+                drop_path=dpr,
+                norm_cfg=self.norm_cfg
+        )
+        self.conv_1x1_n = nn.Conv2d(self.embed_dim_n, sum(self.trans_channels[2:4]), 1, 1, 0)
+        
+        # self.LAF_n4 = AdvPoolFusion()
+        self.Inject_n4 = inj_block(channel_in_list[2], channel_in_list[2], norm_cfg=self.norm_cfg,
+                                   activations=nn.ReLU6)    # C4
+        
+        if rep == 'RepBlock':
+            self.Rep_n4 = RepBlock(
+                in_channels=channel_in_list[1] + channel_in_list[1],  # C3 + C3 256 + 256
+                out_channels=channel_in_list[2],  # C4 512
+                n=self.num_repeats,
+                block=block
+            )
+        elif rep == 'BepC3':
+            self.Rep_n4 = BepC3(
+                    in_channels=channel_in_list[1] + channel_in_list[1],  # C3 + C3 256 + 256
+                    out_channels=channel_in_list[2],  # C4 512
+                    n=self.num_repeats,
+                    e=self.csp_e,
+                    block=block
+            )
+        
+        # self.LAF_n5 = AdvPoolFusion()
+        self.Inject_n5 = inj_block(channel_in_list[3], channel_in_list[3], norm_cfg=self.norm_cfg,
+                                   activations=nn.ReLU6)    # C5
+        
+        if rep == 'RepBlock':
+            self.Rep_n5 = RepBlock(
+                in_channels=channel_in_list[3],  # C4 + C4 512 + 512
+                out_channels=channel_in_list[3],  # C5 1024
+                n=self.num_repeats,
+                block=block
+            )
+        elif rep == 'BepC3':
+            self.Rep_n5 = BepC3(
+                    in_channels=channel_in_list[3],  # C5
+                    out_channels=channel_in_list[3],  # C5 1024
+                    n=self.num_repeats,
+                    e=self.csp_e,
+                    block=block
+            )
+        
+    
+    def forward(self, input):
+        (c2_ir, c3_ir, c4_ir, c5_ir, c3, c4, c5) = input
+        
+        # Low-GD
+        ## use conv fusion global info
+        low_align_feat = self.low_FAM([c2_ir, c3_ir, c4_ir, c5_ir])
+        low_fuse_feat = self.low_IFM(low_align_feat)
+        low_global_info = low_fuse_feat.split(self.trans_channels[0:2], dim=1)
+        
+        ## inject low-level global info to p4
+        # c5_half = self.reduce_layer_c5(c5)
+        # p4_adjacent_info = self.LAF_p4([c3, c4, c5_half])
+        p4 = self.Inject_p4(c4, low_global_info[0])
+        p4 = self.Rep_p4(p4)
+        
+        ## inject low-level global info to p3
+        # p4_half = self.reduce_layer_p4(p4)
+        # p3_adjacent_info = self.LAF_p3([c2, c3, p4_half])
+        p3 = self.Inject_p3(c3, low_global_info[1])
+        p3 = self.Rep_p3(p3)
+        
+        # High-GD
+        ## use transformer fusion global info
+        high_align_feat = self.high_FAM([p3, p4, c5_ir])
+        high_fuse_feat = self.high_IFM(high_align_feat)
+        high_fuse_feat = self.conv_1x1_n(high_fuse_feat)
+        high_global_info = high_fuse_feat.split(self.trans_channels[2:4], dim=1)
+        
+        ## inject low-level global info to n4
+        # n4_adjacent_info = self.LAF_n4(p3, p4_half)
+        n4 = self.Inject_n4(p4, high_global_info[0])
+        n4 = self.Rep_n4(n4)
+        
+        ## inject low-level global info to n5
+        # n5_adjacent_info = self.LAF_n5(n4, c5_half)
+        n5 = self.Inject_n5(c5, high_global_info[1])
+        n5 = self.Rep_n5(n5)
+        
+        outputs = [p3, n4, n5]
+        
+        return outputs
+
+
+class GDNeck_P3(nn.Module):
+    def __init__(
+            self,
+            channel_in_list=[128, 256, 512, 1024],
+            channel_out = [256, 512, 1024]
+    ):
+        super().__init__()
+        
+        assert channel_in_list is not None        
+        self.fusion_in = sum(channel_in_list)
+
+        if self.fusion_in == 480:   # n
+            block = RepVGGBlock
+            rep = 'RepBlock'
+
+            self.embed_dim_p = 96
+            self.fuse_block_num = 3
+            self.trans_channels = [64, 32, 64, 128]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 4
+            self.csp_e = None
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 2
+            self.embed_dim_n = 352
+            self.key_dim = 8
+            self.num_heads = 4
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+            
+        elif self.fusion_in == 960: # s
+            block = RepVGGBlock
+            rep = 'RepBlock'
+
+            self.embed_dim_p = 128
+            self.fuse_block_num = 3
+            self.trans_channels = [128, 64, 128, 256]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 4
+            self.csp_e = None
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 2
+            self.embed_dim_n = 704
+            self.key_dim = 8
+            self.num_heads = 4
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+
+
+        elif self.fusion_in == 1184:    # m
+            block = BottleRep
+            rep = 'BepC3'
+
+            self.embed_dim_p = 192
+            self.fuse_block_num = 3
+            self.trans_channels = [192, 96, 192, 384]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 7
+            self.csp_e = float(2) / 3,
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 2
+            self.embed_dim_n = 1056
+            self.key_dim = 8
+            self.num_heads = 4
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+        
+
+        elif self.fusion_in == 1408:    # l
+            block = BottleRep
+            rep = 'BepC3'
+            
+            self.embed_dim_p = 192
+            self.fuse_block_num = 3
+            self.trans_channels = [256, 128, 256, 512]
+            self.norm_cfg = dict(type='SyncBN', requires_grad=True)
+            self.num_repeats = 12
+            self.csp_e = float(1) / 2,
+            self.c2t_stride = 2
+            self.pool_mode = 'torch'
+            self.drop_path_rate = 0.1
+            self.depths = 3
+            self.embed_dim_n = 1408
+            self.key_dim = 8
+            self.num_heads = 8
+            self.mlp_ratios = 1
+            self.attn_ratios = 2
+        
+        inj_block = InjectionMultiSum_Auto_pool
+        
+        # low
+        self.low_FAM = SimFusion_4in()
+        self.low_IFM = nn.Sequential(
+                Conv(self.fusion_in, self.embed_dim_p, kernel_size=1, stride=1, padding=0),
+                *[block(self.embed_dim_p, self.embed_dim_p) for _ in range(self.fuse_block_num)],
+                Conv(self.embed_dim_p, sum(self.trans_channels[0:2]), kernel_size=1, stride=1, padding=0),
+        )
+        
+        self.reduce_layer_c5 = SimConv(
+                in_channels=channel_in_list[3],  # C5 1024
+                out_channels=channel_in_list[1],  # C3 256
+                kernel_size=1,
+                stride=1
+        )
+        self.LAF_p4 = SimFusion_3in(
+                in_channel_list=[channel_in_list[2], channel_in_list[2]],  # C4 512, 512
+                out_channels=channel_in_list[1],  # C3 256
+        )
+        self.Inject_p4 = inj_block(channel_in_list[1], channel_in_list[1], norm_cfg=self.norm_cfg,
+                                   activations=nn.ReLU6)    # C3
+        
+        if rep == 'RepBlock':
+            self.Rep_p4 = RepBlock(
+                    in_channels=channel_in_list[1],  # C3 256
+                    out_channels=channel_in_list[1],  # C3 256
+                    n=self.num_repeats,
+                    block=block
+            )
+        elif rep == 'BepC3':
+            self.Rep_p4 = BepC3(
+                    in_channels=channel_in_list[1],  # C3 256
+                    out_channels=channel_in_list[1],  # C3 256
+                    n=self.num_repeats,
+                    e=self.csp_e,
+                    block=block
+            )
+        
+        self.reduce_layer_p4 = SimConv(
+                in_channels=channel_in_list[1],  # C3 256
+                out_channels=channel_in_list[0],  # C2 128
+                kernel_size=1,
+                stride=1
+        )
+        self.LAF_p3 = SimFusion_3in(
+                in_channel_list=[channel_in_list[1], channel_in_list[1]],  # C3 C3 512, 256
+                out_channels=channel_in_list[0],  # C2 256
+        )
+        self.Inject_p3 = inj_block(channel_in_list[0], channel_in_list[0], norm_cfg=self.norm_cfg,
+                                   activations=nn.ReLU6)    # C2
+        
+        if rep == 'RepBlock':
+            self.Rep_p3 = RepBlock(
+                in_channels=channel_in_list[0],  # C2 128
+                out_channels=channel_in_list[0],  # C2 128
+                n=self.num_repeats,
+                block=block
+            )
+        elif rep == 'BepC3':
+            self.Rep_p3 = BepC3(
+                in_channels=channel_in_list[0],  # C2 128
+                out_channels=channel_in_list[0],  # C2 128
+                n=self.num_repeats,
+                e=self.csp_e,
+                block=block
+            )
+
+    
+    def forward(self, input):
+        (c2, c3, c4, c5) = input
+        
+        # Low-GD
+        ## use conv fusion global info
+        low_align_feat = self.low_FAM(input)
+        low_fuse_feat = self.low_IFM(low_align_feat)
+        low_global_info = low_fuse_feat.split(self.trans_channels[0:2], dim=1)
+        
+        ## inject low-level global info to p4
+        c5_half = self.reduce_layer_c5(c5)
+        p4_adjacent_info = self.LAF_p4([c3, c4, c5_half])
+        p4 = self.Inject_p4(p4_adjacent_info, low_global_info[0])
+        p4 = self.Rep_p4(p4)
+        
+        ## inject low-level global info to p3
+        p4_half = self.reduce_layer_p4(p4)
+        p3_adjacent_info = self.LAF_p3([c2, c3, p4_half])
+        p3 = self.Inject_p3(p3_adjacent_info, low_global_info[1])
+        p3 = self.Rep_p3(p3)
+        
+        return p3
