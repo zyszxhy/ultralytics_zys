@@ -7,11 +7,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, DCNv2
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, DCNv2, SpatialAttention
 from .transformer import TransformerBlock
 
 __all__ = ('DFL', 'HGBlock', 'HGStem', 'SPP', 'SPPF', 'C1', 'C2', 'C3', 'C2f', 'C3x', 'C3TR', 'C3Ghost',
-           'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA', 'DP', 'DP_DCNv2')
+           'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA', 'DP', 'DP_DCNv2',
+           'FFB', 'HWT', 'Pass')
 
 
 class DFL(nn.Module):
@@ -444,3 +445,93 @@ class DP_DCNv2(nn.Module):
         x4 = self.dcn4(x4)
 
         return torch.cat((x1, x2, x3, x4), 1)
+
+
+# MFFN blocks
+
+def autopad(k, p=None, d=1):  # kernel, padding, dilation
+    """Pad to 'same' shape outputs."""
+    if d > 1:
+        k = d * (k - 1) + 1 if isinstance(k, int) else [d * (x - 1) + 1 for x in k]  # actual kernel-size
+    if p is None:
+        p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
+    return p
+
+class ChannelAttention_2(nn.Module):
+    """Channel-attention module https://github.com/open-mmlab/mmdetection/tree/v3.0.0rc1/configs/rtmdet."""
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.maxpool = nn.AdaptiveMaxPool2d(1)
+        self.fc = nn.Conv2d(channels, channels, 1, 1, 0, bias=True)
+        self.act = nn.Sigmoid()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.act(self.fc(self.avgpool(x)) + self.fc(self.maxpool(x)))
+
+
+class FFB(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+        self.conv1_1 = nn.Conv2d(c1*2, c1*2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
+        self.relu1 = nn.ReLU()
+        self.conv1_2 = nn.Conv2d(c1*2, c1*2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
+        self.conv2_1 = nn.Conv2d(c1*2, c1*2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
+        self.relu2 = nn.ReLU()
+        self.conv2_2 = nn.Conv2d(c1*2, c1*2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
+
+        self.ch_att = ChannelAttention_2(c1*2)
+        self.sp_att = SpatialAttention(7)
+
+        self.conv3 = nn.Conv2d(c1*2, c1, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
+
+    def forward(self, x):
+        f = torch.cat(x, 1) # 2c*h*w
+        f_r = self.conv1_2(self.relu1(self.conv1_1(f)))
+        f_r = f + f_r
+        f_r = self.conv2_2(self.relu2(self.conv2_1(f_r)))
+        f_att = self.sp_att(self.ch_att(f))
+
+
+        return self.conv3(f_r + f_att)
+
+import numpy as np
+import pywt
+import cv2
+
+class HWT(nn.Module):
+    def __init__(self, c1, c2):
+        super().__init__()
+        assert c1 == 3 and c2 == 4, 'input output channel numbers wrong!'
+
+        
+    def forward(self, x):
+        b, c, h, w = x.size()
+        # device = x.device
+        x_hwt = torch.empty((b, 4, h//2, w//2), dtype=x.dtype).to(x.device)
+        for i in range(b):
+            img = np.transpose(x[i, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+            coeffs = pywt.dwt2(img, 'haar')
+            cA, (cH, cV, cD) = coeffs
+            # 将各个子图进行拼接，最后得到一张图
+            # AH = np.concatenate([cA, cH], axis=1)
+            # VD = np.concatenate([cV, cD], axis=1)
+            # img_hwt_1 = np.concatenate([AH, VD], axis=0)
+            img_hwt = np.array([cA, cH, cV, cD]) / 255
+            # cv2.imwrite(f'./img_hwt_{i}.jpg', img_hwt_1)
+            # cv2.imwrite(f'./img_{i}.jpg', img)
+            x_hwt[i, :, :, :] = torch.tensor(img_hwt)
+
+        return x_hwt
+
+class Pass(nn.Module):
+    def __init__(self, c1, c2):
+        super().__init__()
+        assert c1 == c2, 'input output channel numbers wrong!'
+
+        
+    def forward(self, x):
+        return x

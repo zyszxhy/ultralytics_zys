@@ -98,18 +98,19 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 
 # SAR_AIRcraft1.0 YOLOv8
 
-model = YOLO('yolov8s_det2_4_sar.yaml')
+model = YOLO('yolov8s_lsknet_fpn.yaml')
 model.train(data='SAR_AIRcraft.yaml',
             epochs=300,
             patience=50,
             project='FenghuoCup',
-            name='yolov8s_det2_4_sar_bs32_e300',
+            name='yolov8s_lsknet_fpn_sar_bs32_e300',
             imgsz_train=800,
             imgsz_val=800,
+            imgsz=800,
             sr=6,
             resume=False,
             pretrained='/home/data3/zys/pretrained_weights/yolov8s.pt',
-            device=2,
+            device=3,
             batch=32,
             optimizer='auto',
             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)

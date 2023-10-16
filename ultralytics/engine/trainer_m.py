@@ -307,7 +307,7 @@ class BaseTrainer_m:
                        nb), 100) if self.args.warmup_epochs > 0 else -1  # number of warmup iterations
         last_opt_step = -1
         self.run_callbacks('on_train_start')
-        LOGGER.info(f'Image sizes {self.args.imgsz} train, {self.args.imgsz} val\n'
+        LOGGER.info(f'Image sizes {self.args.imgsz_train} train, {self.args.imgsz_val} val\n'
                     f'Using {self.train_loader.num_workers * (world_size or 1)} dataloader workers\n'
                     f"Logging results to {colorstr('bold', self.save_dir)}\n"
                     f'Starting training for {self.epochs} epochs...')

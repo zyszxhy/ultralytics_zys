@@ -10,7 +10,8 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add, Modal_norm, GD_Multimodal, DevideOutputs_gd)
+                                    RTDETRDecoder, RTDETRDecoder_m, Segment, Add, Modal_norm, GD_Multimodal, DevideOutputs_gd,
+                                    FFB, HWT)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -732,6 +733,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = ch[f]
             c2 = c1[args[0]]
             # args = args
+        elif m is HWT:
+            c1 = ch[f]
+            args = [c1, c1]
         elif m is AIFI:
             args = [ch[f], *args]
         elif m in (HGStem, HGBlock):
@@ -754,6 +758,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if ch[f[0]] == ch[f[1]]:
                 c2 = ch[f[0]]
                 args = [c2]
+            else:
+                raise TypeError('The channel nums of the two feature maps must be the same.')
+        elif m is FFB:
+            if ch[f[0]] == ch[f[1]]:
+                c2 = ch[f[0]]
+                args = [c2, c2]
             else:
                 raise TypeError('The channel nums of the two feature maps must be the same.')
         elif m is Modal_norm:
@@ -935,7 +945,7 @@ def format_state_dict(csd):
                 my_state_dict[key_ir] = value
 
             elif layer_id>=10:
-                new_layer_id = str(layer_id + 14)
+                new_layer_id = str(layer_id + 10)
                 key = key.replace(str(layer_id), str(new_layer_id), 1)
                 my_state_dict[key] = value
         

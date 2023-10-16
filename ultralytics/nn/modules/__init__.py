@@ -14,7 +14,7 @@ os.system(f'onnxsim {f} {f} && open {f}')
 """
 
 from .block import (C1, C2, C3, C3TR, DFL, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x, GhostBottleneck,
-                    HGBlock, HGStem, Proto, RepC3, C2_5, ASA, DP, DP_DCNv2)
+                    HGBlock, HGStem, Proto, RepC3, C2_5, ASA, DP, DP_DCNv2, FFB, HWT, Pass)
 from .conv import (CBAM, ChannelAttention, Concat, Conv, Conv2, ConvTranspose, DWConv, DWConvTranspose2d, Focus,
                    GhostConv, LightConv, RepConv, SpatialAttention, Add, Modal_norm, DCNv2, GAMAttention)
 from .head import Classify, Detect, Pose, RTDETRDecoder, Segment
@@ -24,6 +24,8 @@ from .transformer import (AIFI, MLP, DeformableTransformerDecoder, DeformableTra
 
 from .superyolo_models import (DeepLab)
 from .goldyolo_gdneck import (GDNeck, DevideOutputs_gd, GD_Multimodal, GDNeck_P3)
+from .lsknet import LSKNet
+from .fpn import FPN
 
 __all__ = ('Conv', 'Conv2', 'LightConv', 'RepConv', 'DWConv', 'DWConvTranspose2d', 'ConvTranspose', 'Focus',
            'GhostConv', 'ChannelAttention', 'SpatialAttention', 'CBAM', 'Concat', 'TransformerLayer',
@@ -32,4 +34,4 @@ __all__ = ('Conv', 'Conv2', 'LightConv', 'RepConv', 'DWConv', 'DWConvTranspose2d
            'Segment', 'Pose', 'Classify', 'TransformerEncoderLayer', 'RepC3', 'RTDETRDecoder', 'AIFI',
            'DeformableTransformerDecoder', 'DeformableTransformerDecoderLayer', 'MSDeformAttn', 'MLP', 'Add',
            'RTDETRDecoder_m', 'Modal_norm', 'DeepLab', 'C2_5', 'ASA', 'GDNeck', 'DevideOutputs_gd', 'GD_Multimodal',
-           'DP', 'GDNeck_P3', 'DCNv2', 'DP_DCNv2', 'GAMAttention')
+           'DP', 'GDNeck_P3', 'DCNv2', 'DP_DCNv2', 'GAMAttention', 'FFB', 'HWT', 'Pass', 'LSKNet', 'FPN')

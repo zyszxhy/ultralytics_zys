@@ -11,7 +11,7 @@ from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottlenec
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
                                     RTDETRDecoder, Segment, C2_5, ASA, Add, GDNeck, DevideOutputs_gd, DP, GDNeck_P3,
-                                    DCNv2, DP_DCNv2, GAMAttention)
+                                    DCNv2, DP_DCNv2, GAMAttention, FFB, HWT, Pass, LSKNet, FPN)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -205,13 +205,15 @@ class BaseModel(nn.Module):
             if os.path.exists(weights):
                 model = torch.load(weights)
                 csd = model['model'].float().state_dict()  # checkpoint state_dict as FP32
+                csd = format_state_dict(csd)    # 加载预训练权重
             else:
                 raise TypeError(f'{weights} is not exist.')
         else:
-            model = weights.model
-            csd = model.float().state_dict()
+            # model = weights.model
+            # csd = model.float().state_dict()
+            csd = weights.state_dict()
         # model = weights['model'] if isinstance(weights, dict) else weights  # torchvision models are not dicts
-        csd = format_state_dict(csd)    # 加载预训练权重
+        # csd = format_state_dict(csd)    # 加载预训练权重
         csd = intersect_dicts(csd, self.state_dict())  # intersect
         self.load_state_dict(csd, strict=False)  # load
         if verbose:
@@ -709,6 +711,17 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = [ch[in_num] for in_num in f]
             c2 = [c1[-3]//2, c1[-2]//2, c1[-1]//2]
             args = [c1, c2]
+        elif m is LSKNet:
+            c1, c2 = ch[f], args[0]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = [make_divisible(min(c_o, max_channels) * width, 8) for c_o in c2]
+            if sum(c2) == 1024:
+                depths = [2, 2, 4, 2]
+            elif sum(c2) == 512:
+                depths = [3, 3, 5, 2]
+            else:
+                raise ValueError('sum of embed_dim must be 1024 or 512!')
+            args = [c1, c2, depths, *args[1:]]
         elif m is GDNeck_P3:
             c1 = [ch[in_num] for in_num in f]
             c2 = c1[-3]//2
@@ -717,8 +730,21 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = ch[f]
             c2 = c1[args[0]]
             # args = args
+        elif m is HWT:
+            c1 = ch[f]
+            c2 = 4
+            args = [c1, c2]
+        elif m is Pass:
+            c1 = ch[f]
+            args = [c1, c1]
         elif m is AIFI:
             args = [ch[f], *args]
+        elif m is FPN:
+            c1 = [ch[in_num] for in_num in f]
+            num_outs = args[1]
+            out_chs = args[0]
+            c2 = [out_chs for _ in range(num_outs)]
+            args = [c1, *args]
         elif m in (HGStem, HGBlock):
             c1, cm, c2 = ch[f], args[0], args[1]
             args = [c1, cm, c2, *args[2:]]
@@ -734,6 +760,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             if ch[f[0]] == ch[f[1]]:
                 c2 = ch[f[0]]
                 args = [c2]
+            else:
+                raise TypeError('The channel nums of the two feature maps must be the same.')
+        elif m is FFB:
+            if ch[f[0]] == ch[f[1]]:
+                c2 = ch[f[0]]
+                args = [c2, c2]
             else:
                 raise TypeError('The channel nums of the two feature maps must be the same.')
         elif m in (Detect, Segment, Pose):
@@ -872,11 +904,13 @@ def format_state_dict(csd):
         layer_id = int(key.split('.')[1])
 
         if layer_id>=0 and layer_id<=9:
+            new_layer_id = str(layer_id + 1)
+            key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=10:
-            new_layer_id = str(layer_id + 0)
+            new_layer_id = str(layer_id + 12)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
