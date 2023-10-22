@@ -945,7 +945,7 @@ def format_state_dict(csd):
                 my_state_dict[key_ir] = value
 
             elif layer_id>=10:
-                new_layer_id = str(layer_id + 10)
+                new_layer_id = str(layer_id + 13)
                 key = key.replace(str(layer_id), str(new_layer_id), 1)
                 my_state_dict[key] = value
         

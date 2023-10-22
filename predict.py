@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-model = YOLO('/home/zhangyusi/ultralytics_zys/runs/detect/yolov8n_saraircraft/weights/best.pt')
+model = YOLO('/home/zhangyusi/FenghuoCup/yolov8s_sar_bs32_e300/weights/best.pt')
 source = '/home/data3/zys/SAR_AIRcraft_1_0/val_img_fold'
 model.predict(source=source,
               imgsz=800,

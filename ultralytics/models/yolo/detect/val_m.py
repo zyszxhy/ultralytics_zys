@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ultralytics.data import build_dataloader, build_yolo_dataset, converter
+from ultralytics.data import build_dataloader, build_yolo_dataset_m, converter
 from ultralytics.engine.validator_m import BaseValidator_m
 from ultralytics.utils import LOGGER, ops
 from ultralytics.utils.checks import check_requirements
@@ -184,7 +184,7 @@ class DetectionValidator_m(BaseValidator_m):
         iou = box_iou(labels[:, 1:], detections[:, :4])
         return self.match_predictions(detections[:, 5], labels[:, 0], iou)
 
-    def build_dataset(self, img_path_rgb, img_path_ir, mode='val', batch=None):
+    def build_dataset(self, img_path_rgb, img_path_ir, imgsz, mode='val', batch=None):
         """
         Build YOLO Dataset.
 
@@ -194,11 +194,11 @@ class DetectionValidator_m(BaseValidator_m):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride if self.model else 0), 32)
-        return build_yolo_dataset(self.args, img_path_rgb, img_path_ir, batch, self.data, mode=mode, stride=gs)
+        return build_yolo_dataset_m(self.args, img_path_rgb, img_path_ir, imgsz=imgsz, batch=batch, data=self.data, mode=mode, stride=gs)
 
-    def get_dataloader(self, dataset_path_rgb, dataset_path_ir, batch_size):
+    def get_dataloader(self, dataset_path_rgb, dataset_path_ir, imgsz, batch_size):
         """Construct and return dataloader."""
-        dataset = self.build_dataset(dataset_path_rgb, dataset_path_ir, batch=batch_size, mode='val')
+        dataset = self.build_dataset(dataset_path_rgb, dataset_path_ir, imgsz=imgsz, batch=batch_size, mode='val')
         return build_dataloader(dataset, batch_size, self.args.workers, shuffle=False, rank=-1)  # return dataloader
 
     def plot_val_samples(self, batch, ni):

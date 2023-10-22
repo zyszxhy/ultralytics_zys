@@ -61,7 +61,10 @@ class BaseDataset(Dataset):
                  pad=0.5,
                  single_cls=False,
                  classes=None,
-                 fraction=1.0):
+                 fraction=1.0,
+                 crop_sub=False,
+                 crop_size=640,
+                 crop_overlap=0.1):
         super().__init__()
         self.img_path = img_path
         self.imgsz = imgsz
@@ -69,6 +72,9 @@ class BaseDataset(Dataset):
         self.single_cls = single_cls
         self.prefix = prefix
         self.fraction = fraction
+        self.crop_sub = crop_sub
+        self.crop_size = crop_size
+        self.crop_overlap = crop_overlap
         self.im_files = self.get_img_files(self.img_path)
         self.labels = self.get_labels()
         self.update_labels(include_class=classes)  # single_cls and include_class
@@ -152,7 +158,10 @@ class BaseDataset(Dataset):
                 if im is None:
                     raise FileNotFoundError(f'Image Not Found {f}')
             h0, w0 = im.shape[:2]  # orig hw
-            r = self.imgsz / max(h0, w0)  # ratio
+            if self.crop_sub:
+                r = 1
+            else:
+                r = self.imgsz / max(h0, w0)  # ratio
             if r != 1:  # if sizes are not equal
                 interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
                 im = cv2.resize(im, (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz)),

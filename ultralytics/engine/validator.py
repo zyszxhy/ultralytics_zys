@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from tqdm import tqdm
+import torchvision
 
 from ultralytics.cfg import get_cfg
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
@@ -156,7 +157,11 @@ class BaseValidator:
                 self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
             if not pt:
                 self.args.rect = False
-            self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.imgsz_val, self.args.batch)
+            if self.args.crop_sub and self.args.batch != 1:
+                raise ValueError('When crop sub_img, batch must be 1!')
+            assert self.args.crop_size == self.args.imgsz_val, 'crop size must be the same as imgsz to val!'
+            self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.imgsz_val, self.args.batch,
+                                                                     self.args.crop_sub, self.args.crop_size, self.args.crop_overlap)
 
             model.eval()
             model.warmup(imgsz=(1 if pt else self.args.batch, 3, imgsz, imgsz))  # warmup
@@ -179,7 +184,41 @@ class BaseValidator:
 
             # Inference
             with dt[1]:
-                preds = model(batch['img'], augment=augment)
+                if self.args.crop_sub:
+                    # crop_imgs = []
+                    # img = batch['img_ori']
+                    # # import cv2
+                    # # img_write = np.transpose(img[0, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
+                    # # cv2.imwrite(f'./img.jpg', img_write)
+                    # _, _, h, w = img.shape
+                    # overlap = self.args.crop_overlap
+                    # window_size = self.args.crop_size
+                    # assert window_size == batch['ori_shape'], 'crop size must be same as val/predict size!'
+                    # if h <= window_size and w <= window_size:
+                    #     preds = model(batch['img'], augment=augment)
+                    # else:
+                    #     n_sub_h = math.ceil((h - overlap*window_size) / (window_size*(1-overlap)))
+                    #     n_sub_w = math.ceil((w - overlap*window_size) / (window_size*(1-overlap)))
+                    #     overlap_r_h = (n_sub_h*window_size - h) / ((n_sub_h - 1)*window_size) if n_sub_h>1 else 1
+                    #     overlap_r_w = (n_sub_w*window_size - w) / ((n_sub_w - 1)*window_size) if n_sub_w>1 else 1
+                    #     assert overlap_r_h >= overlap and overlap_r_w >= overlap, 'real overlap must be greater than setting!'
+                    #     dy = int(window_size * (1 - overlap_r_h))
+                    #     dx = int(window_size * (1 - overlap_r_w))
+                    #     range_h = np.array(range(0, h-window_size+dy, dy))
+                    #     range_w = np.array(range(0, w-window_size+dx, dx))
+                    #     for y in range_h:
+                    #         for x in range_w:
+                    #             slice_xmax = x + window_size
+                    #             slice_ymax = y + window_size
+                    #             sub_image = img[:, :, y:slice_ymax, x:slice_xmax]
+                    #             # sub_image_write = np.transpose(sub_image[0, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
+                    #             # cv2.imwrite(f'./img_sub_{y}_{x}.jpg', sub_image_write)
+                    #             crop_imgs.append(sub_image)
+                    #     batch['img_ori'] = torch.cat(crop_imgs, 0)
+                    preds = model(batch['crop_imgs'], augment=augment)
+
+                else:
+                    preds = model(batch['img'], augment=augment)
 
             # Loss
             with dt[2]:
@@ -188,8 +227,35 @@ class BaseValidator:
 
             # Postprocess
             with dt[3]:
+                # if self.args.crop_sub and preds[0].shape[0] > 1:
+                #     i = 0
+                #     bs, ncbox, ins = preds[0].shape
+                #     for y in batch['range_h'][0]:
+                #         for x in batch['range_w'][0]:
+                #             preds[0][i][0, :] += x
+                #             preds[0][i][1, :] += y
+                #             i += 1
+                #     preds[0] = preds[0].reshape(1, ncbox, bs*ins)
+                
                 preds = self.postprocess(preds)
 
+                if self.args.crop_sub and len(preds) > 1:
+                    i = 0
+                    for y in batch['range_h'][0]:
+                        for x in batch['range_w'][0]:
+                            preds[i][:, 0] += x
+                            preds[i][:, 2] += x
+                            preds[i][:, 1] += y
+                            preds[i][:, 3] += y
+                            i += 1
+                    preds = [torch.cat(preds, 0)]
+                    c = preds[0][:, 5:6] * (0 if self.args.single_cls else 7680)  # classes
+                    boxes, scores = preds[0][:, :4] + c, preds[0][:, 4]  # boxes (offset by class), scores
+                    i = torchvision.ops.nms(boxes, scores, self.args.iou)  # NMS
+                    i = i[:self.args.max_det]  # limit detections
+                    preds[0] = preds[0][i] 
+
+            
             self.update_metrics(preds, batch)
             if self.args.plots and batch_i < 3:
                 self.plot_val_samples(batch, batch_i)

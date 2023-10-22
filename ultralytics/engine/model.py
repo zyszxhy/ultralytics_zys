@@ -225,7 +225,7 @@ class Model:
         # Check prompts for SAM/FastSAM
         prompts = kwargs.pop('prompts', None)
         overrides = self.overrides.copy()
-        overrides['conf'] = 0.25
+        # overrides['conf'] = 0.25
         overrides.update(kwargs)  # prefer kwargs
         overrides['mode'] = kwargs.get('mode', 'predict')
         assert overrides['mode'] in ['track', 'predict']

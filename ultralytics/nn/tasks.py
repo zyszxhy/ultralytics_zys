@@ -11,7 +11,7 @@ from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottlenec
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
                                     RTDETRDecoder, Segment, C2_5, ASA, Add, GDNeck, DevideOutputs_gd, DP, GDNeck_P3,
-                                    DCNv2, DP_DCNv2, GAMAttention, FFB, HWT, Pass, LSKNet, FPN)
+                                    DCNv2, DP_DCNv2, GAMAttention, FFB, HWT, Pass, LSKNet, FPN, PENet, C2f_SFE, CoordAtt)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -698,7 +698,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
                  BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3,
-                 C2_5, ASA, DP, DCNv2, DP_DCNv2, GAMAttention):
+                 C2_5, ASA, DP, DCNv2, DP_DCNv2, GAMAttention, C2f_SFE, CoordAtt):
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
@@ -745,6 +745,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             out_chs = args[0]
             c2 = [out_chs for _ in range(num_outs)]
             args = [c1, *args]
+        elif m is PENet:
+            c1 = 3
+            c2 = 3
+            # args = []
         elif m in (HGStem, HGBlock):
             c1, cm, c2 = ch[f], args[0], args[1]
             args = [c1, cm, c2, *args[2:]]
@@ -904,13 +908,13 @@ def format_state_dict(csd):
         layer_id = int(key.split('.')[1])
 
         if layer_id>=0 and layer_id<=9:
-            new_layer_id = str(layer_id + 1)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=10:
-            new_layer_id = str(layer_id + 12)
+            new_layer_id = str(layer_id + 4)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value

@@ -602,6 +602,122 @@ class LetterBox:
         labels['instances'].add_padding(padw, padh)
         return labels
 
+class LetterBox_cropsub:
+    """Resize image and padding for detection, instance segmentation, pose."""
+
+    def __init__(self, new_shape=(640, 640), auto=False, scaleFill=False, scaleup=True, center=True, stride=32,
+                 crop_size=640, crop_overlap=0.1):
+        """Initialize LetterBox object with specific parameters."""
+        self.new_shape = new_shape
+        self.auto = auto
+        self.scaleFill = scaleFill
+        self.scaleup = scaleup
+        self.stride = stride
+        self.center = center  # Put the image in the middle or top-left
+        self.crop_size = crop_size
+        self.crop_overlap = crop_overlap
+
+    def __call__(self, labels=None, image=None):
+        """Return updated labels and image with added border."""
+        if labels is None:
+            labels = {}
+        img = labels.get('img') if image is None else image
+        shape = img.shape[:2]  # current shape [height, width]
+        new_shape_crop = labels.pop('rect_shape', self.new_shape)
+        if isinstance(new_shape_crop, int):
+            new_shape_crop = (new_shape_crop, new_shape_crop)
+
+        # Scale ratio (new / old)
+        # r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        # if not self.scaleup:  # only scale down, do not scale up (for better val mAP)
+        #     r = min(r, 1.0)
+
+        # Compute padding
+        # ratio = r, r  # width, height ratios
+        window_size = self.crop_size
+        new_unpad = window_size, window_size
+        dw, dh = new_shape_crop[1] - new_unpad[0], new_shape_crop[0] - new_unpad[1]  # wh padding
+        new_shape = (shape[0] + dh, shape[1] + dw)
+        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        if not self.scaleup:  # only scale down, do not scale up (for better val mAP)
+            r = min(r, 1.0)
+        ratio = r, r  # width, height ratios
+        if self.auto:  # minimum rectangle
+            dw, dh = np.mod(dw, self.stride), np.mod(dh, self.stride)  # wh padding
+        elif self.scaleFill:  # stretch
+            dw, dh = 0.0, 0.0
+            new_unpad = (new_shape_crop[1], new_shape_crop[0])
+            ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
+
+        if self.center:
+            dw /= 2  # divide padding into 2 sides
+            dh /= 2
+        if labels.get('ratio_pad'):
+            labels['ratio_pad'] = (labels['ratio_pad'], (dw, dh))  # for evaluation
+
+        top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
+        
+        crop_imgs = []        
+        h, w, _ = img.shape
+        overlap = self.crop_overlap
+        if h <= window_size and w <= window_size:
+            sub_image = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+            sub_image = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                 value=(114, 114, 114))  # add border
+            crop_imgs.append(sub_image)
+            range_h = np.array(range(0, window_size, window_size))
+            range_w = np.array(range(0, window_size, window_size))
+        else:
+            n_sub_h = math.ceil((h - overlap*window_size) / (window_size*(1-overlap)))
+            n_sub_w = math.ceil((w - overlap*window_size) / (window_size*(1-overlap)))
+            overlap_r_h = (n_sub_h*window_size - h) / ((n_sub_h - 1)*window_size) if n_sub_h>1 else 1
+            overlap_r_w = (n_sub_w*window_size - w) / ((n_sub_w - 1)*window_size) if n_sub_w>1 else 1
+            assert overlap_r_h >= overlap and overlap_r_w >= overlap, 'real overlap must be greater than setting!'
+            dy = int(window_size * (1 - overlap_r_h))
+            dx = int(window_size * (1 - overlap_r_w))
+            range_h = np.array(range(0, h-window_size+dy, dy))
+            range_w = np.array(range(0, w-window_size+dx, dx))
+            for y in range_h:
+                for x in range_w:
+                    slice_xmax = x + window_size
+                    slice_ymax = y + window_size
+                    sub_image = img[y:slice_ymax, x:slice_xmax, :]
+                    sub_image = cv2.copyMakeBorder(sub_image, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                            value=(114, 114, 114))  # add border
+                    # sub_image_write = np.transpose(sub_image[0, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
+                    # cv2.imwrite(f'./img_sub_{y}_{x}.jpg', sub_image)
+                    crop_imgs.append(sub_image)
+
+        if h <= window_size and w <= window_size:
+            img = sub_image
+        else:
+            # if shape[::-1] != new_unpad:  # resize
+            #     img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+            img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                    value=(114, 114, 114))  # add border
+            # img_write = np.transpose(img[0, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
+            # cv2.imwrite(f'./img.jpg', img)
+        
+        if len(labels):
+            labels = self._update_labels(labels, ratio, dw, dh)
+            labels['img'] = img
+            labels['crop_imgs'] = crop_imgs
+            labels['resized_shape'] = new_shape
+            labels['range_h'] = range_h
+            labels['range_w'] = range_w
+            return labels
+        else:
+            return crop_imgs
+
+    def _update_labels(self, labels, ratio, padw, padh):
+        """Update labels."""
+        labels['instances'].convert_bbox(format='xyxy')
+        labels['instances'].denormalize(*labels['img'].shape[:2][::-1])
+        labels['instances'].scale(*ratio)
+        labels['instances'].add_padding(padw, padh)
+        return labels
+
 
 class CopyPaste:
 
@@ -733,6 +849,12 @@ class Format:
         if self.normalize:
             instances.normalize(w, h)
         labels['img'] = self._format_img(img)
+        crop_imgs = labels.get('crop_imgs')
+        if crop_imgs is not None:
+            crop_imgs = [self._format_img(x) for x in crop_imgs]
+            labels['crop_imgs'] = crop_imgs
+            # labels['range_h'] = torch.from_numpy(labels['range_h'])
+            # labels['range_w'] = torch.from_numpy(labels['range_w'])
         labels['cls'] = torch.from_numpy(cls) if nl else torch.zeros(nl)
         labels['bboxes'] = torch.from_numpy(instances.bboxes) if nl else torch.zeros((nl, 4))
         if self.return_keypoint:

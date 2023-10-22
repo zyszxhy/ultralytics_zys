@@ -12,7 +12,7 @@ from .transformer import TransformerBlock
 
 __all__ = ('DFL', 'HGBlock', 'HGStem', 'SPP', 'SPPF', 'C1', 'C2', 'C3', 'C2f', 'C3x', 'C3TR', 'C3Ghost',
            'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA', 'DP', 'DP_DCNv2',
-           'FFB', 'HWT', 'Pass')
+           'FFB', 'HWT', 'Pass', 'C2f_SFE','CoordAtt')
 
 
 class DFL(nn.Module):
@@ -339,13 +339,13 @@ class C2_5(nn.Module):
         return x
   
 class DP(nn.Module):
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act='ReLU'):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act='ReLU'):
         super().__init__()
         assert c1 == c2, 'input output channel numbers wrong!'
-        self.dconv1 = Conv(c1//4, c1//4, 3, 1, None, 1, 1, 'ReLU')
-        self.dconv2 = Conv(c1//4, c1//4, 3, 1, None, 1, 3, 'ReLU')
-        self.dconv3 = Conv(c1//4, c1//4, 3, 1, None, 1, 5, 'ReLU')
-        self.dconv4 = Conv(c1//4, c1//4, 3, 1, None, 1, 7, 'ReLU')
+        self.dconv1 = nn.Conv2d(c1//4, c1//4, 3, 1, autopad(3, p, 1), 1, 1)
+        self.dconv2 = nn.Conv2d(c1//4, c1//4, 3, 1, autopad(3, p, 3), 3, 1)
+        self.dconv3 = nn.Conv2d(c1//4, c1//4, 3, 1, autopad(3, p, 5), 5, 1)
+        self.dconv4 = nn.Conv2d(c1//4, c1//4, 3, 1, autopad(3, p, 7), 7, 1)
 
         
     def forward(self, x):
@@ -510,7 +510,8 @@ class HWT(nn.Module):
     def forward(self, x):
         b, c, h, w = x.size()
         # device = x.device
-        x_hwt = torch.empty((b, 4, h//2, w//2), dtype=x.dtype).to(x.device)
+        # x_hwt = torch.empty((b, 4, h//2, w//2), dtype=x.dtype).to(x.device)
+        x_hwt = torch.empty((b, 3, h, w), dtype=x.dtype).to(x.device)
         for i in range(b):
             img = np.transpose(x[i, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
@@ -520,10 +521,17 @@ class HWT(nn.Module):
             # AH = np.concatenate([cA, cH], axis=1)
             # VD = np.concatenate([cV, cD], axis=1)
             # img_hwt_1 = np.concatenate([AH, VD], axis=0)
-            img_hwt = np.array([cA, cH, cV, cD]) / 255
+
+            # img_hwt = np.array([cA, cH, cV, cD]) / 255
+            # x_hwt[i, :, :, :] = torch.tensor(img_hwt)
+
+            c_hwt = F.interpolate(torch.tensor(np.array([cH, cV])).unsqueeze(0), size=[h, w])
+            img_hwt = torch.cat([torch.tensor(img).unsqueeze(0), c_hwt.squeeze(0)], 0) / 255
+            x_hwt[i, :, :, :] = img_hwt
+
             # cv2.imwrite(f'./img_hwt_{i}.jpg', img_hwt_1)
             # cv2.imwrite(f'./img_{i}.jpg', img)
-            x_hwt[i, :, :, :] = torch.tensor(img_hwt)
+            
 
         return x_hwt
 
@@ -535,3 +543,99 @@ class Pass(nn.Module):
         
     def forward(self, x):
         return x
+    
+
+class C2f_SFE(nn.Module):
+    """Faster Implementation of CSP Bottleneck with 2 convolutions."""
+
+    def __init__(self, c1, c2, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        self.c_h = c2 // 2
+        self.cv1 = Conv(c1, self.c_h, 3)
+        self.cv1_1 = Conv(self.c_h, self.c_h, 1)
+
+        self.acs1 = Conv(self.c_h//4, self.c_h//4, 1, 1, None, 1, 1)
+        self.acs2 = Conv(self.c_h//4, self.c_h//4, 3, 1, None, 1, 6)
+        self.acs3 = Conv(self.c_h//4, self.c_h//4, 3, 1, None, 1, 12)
+        self.acs4 = Conv(self.c_h//4, self.c_h//4, 3, 1, None, 1, 18)
+        # self.acs5 = nn.AdaptiveAvgPool2d(1)
+        self.cv2 = Conv(self.c_h, c2, 1)
+
+    def forward(self, x):
+        x_in = self.cv1_1(self.cv1(x))
+
+        x_1 = self.acs1(x_in[:, :self.c_h//4, :, :])
+        x_2 = self.acs2(x_in[:, self.c_h//4:self.c_h//2, :, :])
+        x_3 = self.acs3(x_in[:, self.c_h//2:self.c_h//4*3, :, :])
+        x_4 = self.acs4(x_in[:, self.c_h//4*3:, :, :])
+
+        x_in = torch.cat((x_1, x_2, x_3, x_4), 1) + x_in
+
+        # x_5 = self.acs5(x_in)
+        # x = torch.add(x_in, x_5)
+        
+        return self.cv2(x_in)
+
+class FESA(nn.Module):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        
+
+    def forward(self, x):
+
+        return
+
+
+class h_sigmoid(nn.Module):
+    def __init__(self, inplace=True):
+        super(h_sigmoid, self).__init__()
+        self.relu = nn.ReLU6(inplace=inplace)
+
+    def forward(self, x):
+        return self.relu(x + 3) / 6
+
+class h_swish(nn.Module):
+    def __init__(self, inplace=True):
+        super(h_swish, self).__init__()
+        self.sigmoid = h_sigmoid(inplace=inplace)
+
+    def forward(self, x):
+        return x * self.sigmoid(x)
+
+class CoordAtt(nn.Module):
+    def __init__(self, inp, oup, reduction=32):
+        super(CoordAtt, self).__init__()
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))
+
+        mip = max(8, inp // reduction)
+
+        self.conv1 = nn.Conv2d(inp, mip, kernel_size=1, stride=1, padding=0)
+        self.bn1 = nn.BatchNorm2d(mip)
+        self.act = h_swish()
+
+        self.conv_h = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
+        self.conv_w = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
+ 
+
+    def forward(self, x):
+        identity = x
+ 
+        n,c,h,w = x.size()
+        x_h = self.pool_h(x)
+        x_w = self.pool_w(x).permute(0, 1, 3, 2)
+
+        y = torch.cat([x_h, x_w], dim=2)
+        y = self.conv1(y)
+        y = self.bn1(y)
+        y = self.act(y) 
+ 
+        x_h, x_w = torch.split(y, [h, w], dim=2)
+        x_w = x_w.permute(0, 1, 3, 2)
+
+        a_h = self.conv_h(x_h).sigmoid()
+        a_w = self.conv_w(x_w).sigmoid()
+
+        out = identity * a_w * a_h
+
+        return out

@@ -71,7 +71,8 @@ def seed_worker(worker_id):  # noqa
     random.seed(worker_seed)
 
 
-def build_yolo_dataset(cfg, img_path, imgsz, batch, data, mode='train', rect=False, stride=32):
+def build_yolo_dataset(cfg, img_path, imgsz, batch, data, mode='train', rect=False, stride=32,
+                       crop_sub=False, crop_size=640, crop_overlap=0.1):
     """Build YOLO Dataset"""
     return YOLODataset(
         img_path=img_path,
@@ -89,7 +90,10 @@ def build_yolo_dataset(cfg, img_path, imgsz, batch, data, mode='train', rect=Fal
         use_keypoints=cfg.task == 'pose',
         classes=cfg.classes,
         data=data,
-        fraction=cfg.fraction if mode == 'train' else 1.0)
+        fraction=cfg.fraction if mode == 'train' else 1.0,
+        crop_sub=crop_sub,
+        crop_size=crop_size,
+        crop_overlap=crop_overlap)
 
 def build_yolo_dataset_m(cfg, img_path_rgb, img_path_ir, imgsz, batch, data, mode='train', rect=False, stride=32):
     """Build YOLO Dataset"""

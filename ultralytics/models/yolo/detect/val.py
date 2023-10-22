@@ -45,6 +45,9 @@ class DetectionValidator(BaseValidator):
         """Preprocesses batch of images for YOLO training."""
         batch['img'] = batch['img'].to(self.device, non_blocking=True)
         batch['img'] = (batch['img'].half() if self.args.half else batch['img'].float()) / 255
+        if batch.get('crop_imgs') is not None:
+            batch['crop_imgs'] = batch['crop_imgs'].to(self.device, non_blocking=True)
+            batch['crop_imgs'] = (batch['crop_imgs'].half() if self.args.half else batch['crop_imgs'].float()) / 255
         for k in ['batch_idx', 'cls', 'bboxes']:
             batch[k] = batch[k].to(self.device)
 
@@ -182,7 +185,7 @@ class DetectionValidator(BaseValidator):
         iou = box_iou(labels[:, 1:], detections[:, :4])
         return self.match_predictions(detections[:, 5], labels[:, 0], iou)
 
-    def build_dataset(self, img_path, imgsz, mode='val', batch=None):
+    def build_dataset(self, img_path, imgsz, mode='val', batch=None, crop_sub=False, crop_size=640, crop_overlap=0.1):
         """
         Build YOLO Dataset.
 
@@ -192,11 +195,12 @@ class DetectionValidator(BaseValidator):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride if self.model else 0), 32)
-        return build_yolo_dataset(self.args, img_path, imgsz, batch, self.data, mode=mode, stride=gs)
+        return build_yolo_dataset(self.args, img_path, imgsz, batch, self.data, mode=mode, stride=gs,\
+                                  crop_sub=crop_sub, crop_size=crop_size, crop_overlap=crop_overlap)
 
-    def get_dataloader(self, dataset_path, imgsz, batch_size):
+    def get_dataloader(self, dataset_path, imgsz, batch_size, crop_sub=False, crop_size=640, crop_overlap=0.1):
         """Construct and return dataloader."""
-        dataset = self.build_dataset(dataset_path, imgsz, batch=batch_size, mode='val')
+        dataset = self.build_dataset(dataset_path, imgsz, batch=batch_size, mode='val', crop_sub=crop_sub, crop_size=crop_size, crop_overlap=crop_overlap)
         return build_dataloader(dataset, batch_size, self.args.workers, shuffle=False, rank=-1)  # return dataloader
 
     def plot_val_samples(self, batch, ni):

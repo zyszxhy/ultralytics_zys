@@ -27,7 +27,7 @@ class DetectionTrainer(BaseTrainer):
         ```
     """
 
-    def build_dataset(self, img_path, imgsz, mode='train', batch=None):
+    def build_dataset(self, img_path, imgsz, mode='train', batch=None, crop_sub=False):
         """
         Build YOLO Dataset.
 
@@ -37,13 +37,13 @@ class DetectionTrainer(BaseTrainer):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
-        return build_yolo_dataset(self.args, img_path, imgsz, batch, self.data, mode=mode, rect=mode == 'val', stride=gs)
+        return build_yolo_dataset(self.args, img_path, imgsz, batch, self.data, mode=mode, rect=self.args.rect, stride=gs, crop_sub=crop_sub)
 
-    def get_dataloader(self, dataset_path, imgsz, batch_size=16, rank=0, mode='train'):
+    def get_dataloader(self, dataset_path, imgsz, batch_size=16, rank=0, mode='train', crop_sub=False):
         """Construct and return dataloader."""
         assert mode in ['train', 'val']
         with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
-            dataset = self.build_dataset(dataset_path, imgsz, mode, batch_size)
+            dataset = self.build_dataset(dataset_path, imgsz, mode, batch_size, crop_sub=crop_sub)
         shuffle = mode == 'train'
         if getattr(dataset, 'rect', False) and shuffle:
             LOGGER.warning("WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")

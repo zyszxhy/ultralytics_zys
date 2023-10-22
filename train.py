@@ -72,7 +72,7 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 # VEDAI YOLOv8l multi_modal
 
 # model = YOLO_m('yolov8l_m_add.yaml')
-# model.train(data='FLIR.yaml',
+# model.train(data='VEDAI.yaml',
 #             epochs=100,
 #             name='yolov8lm_flir_add',
 #             imgsz_train=640,
@@ -80,7 +80,7 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 #             resume=False,
 #             pretrained='/home/data3/zys/pretrained_weights/yolov8l.pt',
 #             batch=8,
-#             device=5,
+#             device=3,
 #             optimizer='auto',
 #             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
 #             lrf=0.01,  # (float) final learning rate (lr0 * lrf)
@@ -98,19 +98,19 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 
 # SAR_AIRcraft1.0 YOLOv8
 
-model = YOLO('yolov8s_lsknet_fpn.yaml')
-model.train(data='SAR_AIRcraft.yaml',
-            epochs=300,
+model = YOLO('yolov8s_coordatt.yaml')
+model.train(data='SAR_AIRcraft_800.yaml',
+            epochs=150,
             patience=50,
             project='FenghuoCup',
-            name='yolov8s_lsknet_fpn_sar_bs32_e300',
+            name='yolov8s_coordatt_800_sar_bs32_e300',
             imgsz_train=800,
             imgsz_val=800,
             imgsz=800,
             sr=6,
             resume=False,
             pretrained='/home/data3/zys/pretrained_weights/yolov8s.pt',
-            device=3,
+            device=1,
             batch=32,
             optimizer='auto',
             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
@@ -126,6 +126,8 @@ model.train(data='SAR_AIRcraft.yaml',
             hsv_h=0,
             hsv_s=0,
             hsv_v=0,
+            multi_scale=[800, 1000, 1200, 1500],
+            mosaic=1.0,
             )
 
 # MLSDNet
