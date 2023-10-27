@@ -11,7 +11,8 @@ from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottlenec
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
                                     RTDETRDecoder, Segment, C2_5, ASA, Add, GDNeck, DevideOutputs_gd, DP, GDNeck_P3,
-                                    DCNv2, DP_DCNv2, GAMAttention, FFB, HWT, Pass, LSKNet, FPN, PENet, C2f_SFE, CoordAtt)
+                                    DCNv2, DP_DCNv2, GAMAttention, FFB, HWT, Pass, LSKNet, FPN, PENet, C2f_SFE, CoordAtt,
+                                    Morph_pre, CBAM, Multi_resolution, MultiSpectral, DWT, SELayer, DepSepConv)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -698,7 +699,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
                  BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3,
-                 C2_5, ASA, DP, DCNv2, DP_DCNv2, GAMAttention, C2f_SFE, CoordAtt):
+                 C2_5, ASA, DP, DCNv2, DP_DCNv2, GAMAttention, C2f_SFE, CoordAtt, CBAM, Multi_resolution, MultiSpectral,
+                 SELayer, DepSepConv):
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
@@ -749,6 +751,14 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = 3
             c2 = 3
             # args = []
+        elif m is Morph_pre:
+            c1 = 3
+            c2 = 3
+            args = [c1, c2, *args[1:]]
+        elif m is DWT:
+            c1 = ch[f]
+            c2 = 3
+            args = [c1, c2, *args[1:]]
         elif m in (HGStem, HGBlock):
             c1, cm, c2 = ch[f], args[0], args[1]
             args = [c1, cm, c2, *args[2:]]
@@ -907,14 +917,26 @@ def format_state_dict(csd):
     for key, value in csd.items():
         layer_id = int(key.split('.')[1])
 
-        if layer_id>=0 and layer_id<=9:
+        if layer_id>=0 and layer_id<=0:
+            new_layer_id = str(layer_id + 0)
+            key = key.replace(str(layer_id), str(new_layer_id), 1)
+            newkey = key
+            my_state_dict[newkey] = value
+        
+        elif layer_id>=1 and layer_id<=2:
+            new_layer_id = str(layer_id + 0)
+            key = key.replace(str(layer_id), str(new_layer_id), 1)
+            newkey = key
+            my_state_dict[newkey] = value
+        
+        elif layer_id>=3 and layer_id<=9:
             new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=10:
-            new_layer_id = str(layer_id + 4)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value

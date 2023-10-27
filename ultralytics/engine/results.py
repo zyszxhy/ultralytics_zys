@@ -307,10 +307,13 @@ class Results(SimpleClass):
                 line += (conf, ) * save_conf + (() if id is None else (id, ))
                 texts.append(('%g ' * len(line)).rstrip() % line)
 
-        if texts:
-            Path(txt_file).parent.mkdir(parents=True, exist_ok=True)  # make directory
-            with open(txt_file, 'a') as f:
+        Path(txt_file).parent.mkdir(parents=True, exist_ok=True)  # make directory
+        with open(txt_file, 'a') as f:
                 f.writelines(text + '\n' for text in texts)
+        # if texts:
+        #     Path(txt_file).parent.mkdir(parents=True, exist_ok=True)  # make directory
+        #     with open(txt_file, 'a') as f:
+        #         f.writelines(text + '\n' for text in texts)
 
     def save_crop(self, save_dir, file_name=Path('im.jpg')):
         """

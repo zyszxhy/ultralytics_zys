@@ -15,7 +15,7 @@ import requests
 import torch
 from PIL import Image
 
-from ultralytics.data.utils import IMG_FORMATS, VID_FORMATS
+from ultralytics.data.utils import IMG_FORMATS, VID_FORMATS, OUTPUT_FORMATS
 from ultralytics.utils import LOGGER, is_colab, is_kaggle, ops
 from ultralytics.utils.checks import check_requirements
 
@@ -26,6 +26,7 @@ class SourceTypes:
     screenshot: bool = False
     from_img: bool = False
     tensor: bool = False
+    from_pathlist: bool = False
 
 
 class LoadStreams:
@@ -271,6 +272,68 @@ class LoadImages:
         self.frame = 0
         self.cap = cv2.VideoCapture(path)
         self.frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT) / self.vid_stride)
+
+    def __len__(self):
+        """Returns the number of files in the object."""
+        return self.nf  # number of files
+
+class LoadImageList:
+    """YOLOv8 image/video dataloader, i.e. `yolo predict source=image.jpg/vid.mp4`."""
+
+    def __init__(self, img_path, det_path, imgsz=640):
+        """Initialize the Dataloader and raise FileNotFoundError if file not found."""
+        # parent = None
+        # if isinstance(img_path, str) and Path(img_path).suffix == '.txt':  # *.txt file with img/vid/dir on each line
+        #     parent = Path(img_path).parent
+        #     img_path = Path(img_path).read_text().splitlines()  # list of sources
+        # files = []
+        # for p in img_path if isinstance(img_path, (list, tuple)) else [img_path]:
+        #     a = str(Path(p).absolute())  # do not use .resolve() https://github.com/ultralytics/ultralytics/issues/2912
+        #     if '*' in a:
+        #         files.extend(sorted(glob.glob(a, recursive=True)))  # glob
+        #     elif os.path.isdir(a):
+        #         files.extend(sorted(glob.glob(os.path.join(a, '*.*'))))  # dir
+        #     elif os.path.isfile(a):
+        #         files.append(a)  # files (absolute or relative to CWD)
+        #     elif parent and (parent / p).is_file():
+        #         files.append(str((parent / p).absolute()))  # files (relative to *.txt file parent)
+        #     else:
+        #         raise FileNotFoundError(f'{p} does not exist')
+
+        images = [x for x in img_path if x.split('.')[-1].lower() in IMG_FORMATS]
+        output = [x for x in det_path if x.split('.')[-1].lower() in OUTPUT_FORMATS]
+        ni = len(images)
+
+        self.imgsz = imgsz
+        self.files = images
+        self.out_files = output
+        self.nf = ni  # number of files
+        self.mode = 'image'
+        self.bs = 1
+        self.cap = None
+        if self.nf == 0:
+            raise FileNotFoundError(f'No images or videos found!')
+
+    def __iter__(self):
+        """Returns an iterator object for VideoStream or ImageFolder."""
+        self.count = 0
+        return self
+
+    def __next__(self):
+        """Return next image, path and metadata from dataset."""
+        if self.count == self.nf:
+            raise StopIteration
+        path = self.files[self.count]
+        out_path = self.out_files[self.count]
+
+        # Read image
+        self.count += 1
+        im0 = cv2.imread(path)  # BGR
+        if im0 is None:
+            raise FileNotFoundError(f'Image Not Found {path}')
+        s = f'image {self.count}/{self.nf} {path}: '
+
+        return [path], [im0], s, self.cap, [out_path]
 
     def __len__(self):
         """Returns the number of files in the object."""

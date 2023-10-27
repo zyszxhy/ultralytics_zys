@@ -9,6 +9,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .pp_lcnet import HardSwish
+
 __all__ = ('Conv', 'Conv2', 'LightConv', 'DWConv', 'DWConvTranspose2d', 'ConvTranspose', 'Focus', 'GhostConv',
            'ChannelAttention', 'SpatialAttention', 'CBAM', 'Concat', 'RepConv', 'Add', 'DCNv2', 'GAMAttention')
 
@@ -34,6 +36,8 @@ class Conv(nn.Module):
         self.act = self.default_act if act is True else act if isinstance(act, nn.Module) else nn.Identity()
         if act == 'ReLU':
             self.act = nn.ReLU()
+        elif act == 'HardSwish':
+            self.act = HardSwish()
 
     def forward(self, x):
         """Apply convolution, batch normalization and activation to input tensor."""
@@ -273,7 +277,7 @@ class SpatialAttention(nn.Module):
 class CBAM(nn.Module):
     """Convolutional Block Attention Module."""
 
-    def __init__(self, c1, kernel_size=7):  # ch_in, kernels
+    def __init__(self, c1, c2, kernel_size=7):  # ch_in, kernels
         super().__init__()
         self.channel_attention = ChannelAttention(c1)
         self.spatial_attention = SpatialAttention(kernel_size)

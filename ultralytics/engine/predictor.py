@@ -147,9 +147,14 @@ class BasePredictor:
         Returns:
             (list): A list of transformed images.
         """
-        same_shapes = all(x.shape == im[0].shape for x in im)
-        auto = same_shapes and self.model.pt
-        return [LetterBox(self.imgsz, auto=auto, stride=self.model.stride)(image=x) for x in im]
+        # same_shapes = all(x.shape == im[0].shape for x in im)
+        # auto = same_shapes and self.model.pt
+
+        im = [LetterBox(self.imgsz, auto=False, scaleup=False, stride=self.model.stride)(image=x) for x in im]
+        im = [cv2.copyMakeBorder(img, 16, 16, 16, 16, cv2.BORDER_CONSTANT,
+                                 value=(114, 114, 114)) for img in im]  # add border
+        return im
+        # return [LetterBox(self.imgsz, auto=auto, stride=self.model.stride)(image=x) for x in im]
 
     def write_results(self, idx, results, batch):
         """Write inference results to a file or directory."""
@@ -193,7 +198,7 @@ class BasePredictor:
     def __call__(self, source=None, model=None, stream=False, *args, **kwargs):
         """Performs inference on an image or stream."""
         self.stream = stream
-        if stream:
+        if stream or self.args.det_path is not None:
             return self.stream_inference(source, model, *args, **kwargs)
         else:
             return list(self.stream_inference(source, model, *args, **kwargs))  # merge list of Result into one
@@ -204,12 +209,13 @@ class BasePredictor:
         for _ in gen:  # running CLI inference without accumulating any outputs (do not modify)
             pass
 
-    def setup_source(self, source):
+    def setup_source(self, source, det_path=None):
         """Sets up source and inference mode."""
         self.imgsz = check_imgsz(self.args.imgsz, stride=self.model.stride, min_dim=2)  # check image size
         self.transforms = getattr(self.model.model, 'transforms', classify_transforms(
             self.imgsz[0])) if self.args.task == 'classify' else None
         self.dataset = load_inference_source(source=source,
+                                             det_path=det_path,
                                              imgsz=self.imgsz,
                                              vid_stride=self.args.vid_stride,
                                              stream_buffer=self.args.stream_buffer)
@@ -231,7 +237,7 @@ class BasePredictor:
             self.setup_model(model)
 
         # Setup source every time predict is called
-        self.setup_source(source if source is not None else self.args.source)
+        self.setup_source(source if source is not None else self.args.source, self.args.det_path)
 
         # Check if save_dir/ label file exists
         if self.args.save or self.args.save_txt:
@@ -247,7 +253,10 @@ class BasePredictor:
         for batch in self.dataset:
             self.run_callbacks('on_predict_batch_start')
             self.batch = batch
-            path, im0s, vid_cap, s = batch
+            if self.args.det_path is not None:
+                path, im0s, vid_cap, s, det_path = batch
+            else:
+                path, im0s, vid_cap, s = batch
 
             # Preprocess
             with profilers[0]:
@@ -259,35 +268,43 @@ class BasePredictor:
 
             # Postprocess
             with profilers[2]:
-                self.results = self.postprocess(preds, im, im0s)
+                if self.args.det_path is not None:
+                    save_path = self.postprocess_xml(preds, im, im0s, det_path, path)
+                else:
+                    self.results = self.postprocess(preds, im, im0s)
             self.run_callbacks('on_predict_postprocess_end')
 
             # Visualize, save, write results
-            n = len(im0s)
-            for i in range(n):
-                self.seen += 1
-                self.results[i].speed = {
-                    'preprocess': profilers[0].dt * 1E3 / n,
-                    'inference': profilers[1].dt * 1E3 / n,
-                    'postprocess': profilers[2].dt * 1E3 / n}
-                p, im0 = path[i], None if self.source_type.tensor else im0s[i].copy()
-                p = Path(p)
+            # n = len(im0s)
+            # for i in range(n):
+            #     self.seen += 1
+            #     self.results[i].speed = {
+            #         'preprocess': profilers[0].dt * 1E3 / n,
+            #         'inference': profilers[1].dt * 1E3 / n,
+            #         'postprocess': profilers[2].dt * 1E3 / n}
+            #     p, im0 = path[i], None if self.source_type.tensor else im0s[i].copy()
+            #     p = Path(p)
 
-                if self.args.verbose or self.args.save or self.args.save_txt or self.args.show:
-                    s += self.write_results(i, self.results, (p, im, im0))
-                if self.args.save or self.args.save_txt:
-                    self.results[i].save_dir = self.save_dir.__str__()
-                if self.args.show and self.plotted_img is not None:
-                    self.show(p)
-                if self.args.save and self.plotted_img is not None:
-                    self.save_preds(vid_cap, i, str(self.save_dir / p.name))
+            #     if self.args.verbose or self.args.save or self.args.save_txt or self.args.show:
+            #         s += self.write_results(i, self.results, (p, im, im0))
+            #     if self.args.save or self.args.save_txt:
+            #         self.results[i].save_dir = self.save_dir.__str__()
+            #     if self.args.show and self.plotted_img is not None:
+            #         self.show(p)
+            #     if self.args.save and self.plotted_img is not None:
+            #         self.save_preds(vid_cap, i, str(self.save_dir / p.name))
 
             self.run_callbacks('on_predict_batch_end')
-            yield from self.results
+            # yield from self.results
 
             # Print time (inference-only)
+            # if self.args.verbose:
+            #     LOGGER.info(f'{s}{profilers[1].dt * 1E3:.1f}ms')
             if self.args.verbose:
-                LOGGER.info(f'{s}{profilers[1].dt * 1E3:.1f}ms')
+                LOGGER.info(f'{path[0]} {profilers[1].dt * 1E3:.1f}ms')
+            
+            if self.args.save_xml:
+                LOGGER.info(f"Results saved to {save_path}")
 
         # Release assets
         if isinstance(self.vid_writer[-1], cv2.VideoWriter):

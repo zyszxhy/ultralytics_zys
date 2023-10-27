@@ -10,9 +10,11 @@ import torch.nn.functional as F
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, DCNv2, SpatialAttention
 from .transformer import TransformerBlock
 
+import math
+
 __all__ = ('DFL', 'HGBlock', 'HGStem', 'SPP', 'SPPF', 'C1', 'C2', 'C3', 'C2f', 'C3x', 'C3TR', 'C3Ghost',
            'GhostBottleneck', 'Bottleneck', 'BottleneckCSP', 'Proto', 'RepC3', 'C2_5', 'ASA', 'DP', 'DP_DCNv2',
-           'FFB', 'HWT', 'Pass', 'C2f_SFE','CoordAtt')
+           'FFB', 'HWT', 'Pass', 'C2f_SFE', 'CoordAtt', 'Morph_pre', 'Multi_resolution', 'MultiSpectral', 'DWT')
 
 
 class DFL(nn.Module):
@@ -510,24 +512,24 @@ class HWT(nn.Module):
     def forward(self, x):
         b, c, h, w = x.size()
         # device = x.device
-        # x_hwt = torch.empty((b, 4, h//2, w//2), dtype=x.dtype).to(x.device)
-        x_hwt = torch.empty((b, 3, h, w), dtype=x.dtype).to(x.device)
+        x_hwt = torch.empty((b, 4, h//2, w//2), dtype=x.dtype).to(x.device)
+        # x_hwt = torch.empty((b, 3, h, w), dtype=x.dtype).to(x.device)
         for i in range(b):
             img = np.transpose(x[i, :, :, :].cpu().numpy(), [1, 2, 0]).astype(np.float32) * 255
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
             coeffs = pywt.dwt2(img, 'haar')
             cA, (cH, cV, cD) = coeffs
             # 将各个子图进行拼接，最后得到一张图
-            # AH = np.concatenate([cA, cH], axis=1)
-            # VD = np.concatenate([cV, cD], axis=1)
-            # img_hwt_1 = np.concatenate([AH, VD], axis=0)
+            AH = np.concatenate([cA, cH], axis=1)
+            VD = np.concatenate([cV, cD], axis=1)
+            # img_hwt = np.concatenate([AH, VD], axis=0)
 
-            # img_hwt = np.array([cA, cH, cV, cD]) / 255
-            # x_hwt[i, :, :, :] = torch.tensor(img_hwt)
+            img_hwt = np.array([cA, cH, cV, cD]) / 255
+            x_hwt[i, :, :, :] = torch.tensor(img_hwt)
 
-            c_hwt = F.interpolate(torch.tensor(np.array([cH, cV])).unsqueeze(0), size=[h, w])
-            img_hwt = torch.cat([torch.tensor(img).unsqueeze(0), c_hwt.squeeze(0)], 0) / 255
-            x_hwt[i, :, :, :] = img_hwt
+            # c_hwt = F.interpolate(torch.tensor(np.array([cH, cV])).unsqueeze(0), size=[h, w])
+            # img_hwt = torch.cat([torch.tensor(img).unsqueeze(0), c_hwt.squeeze(0)], 0) / 255
+            # x_hwt[i, :, :, :] = img_hwt
 
             # cv2.imwrite(f'./img_hwt_{i}.jpg', img_hwt_1)
             # cv2.imwrite(f'./img_{i}.jpg', img)
@@ -639,3 +641,276 @@ class CoordAtt(nn.Module):
         out = identity * a_w * a_h
 
         return out
+
+
+
+class Dilation_my(nn.Module):
+    def __init__(self, c1, c2, k):
+        super().__init__()
+        # assert c1==3 and c2==1, 'Dilation operate require in_ch=1 and out_ch=1!'
+        self.ksize = k
+        # self.dila_kernel = nn.Parameter(torch.randn(self.ksize, self.ksize), requires_grad=True)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        x = x[:, :1, :, :]
+        padding = (self.ksize - 1) // 2
+        x_pad = F.pad(x, (padding, padding, padding, padding), mode='constant', value=0)
+        patches = x_pad.unfold(dimension=2, size=self.ksize, step=1)
+        patches = patches.unfold(dimension=3, size=self.ksize, step=1)
+        # dilate, _ = (patches + self.dila_kernel).reshape(b, c, h, w, -1).max(dim=-1)
+        dilate, _ = (patches).reshape(b, c, h, w, -1).max(dim=-1)
+        return dilate
+
+class Erode_my(nn.Module):
+    def __init__(self, c1, c2, k):
+        super().__init__()
+        # assert c1==3 and c2==1, 'Dilation operate require in_ch=1 and out_ch=1!'
+        self.ksize = k
+        # self.erode_kernel = nn.Parameter(torch.randn(self.ksize, self.ksize), requires_grad=True)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        x = x[:, :1, :, :]
+        padding = (self.ksize - 1) // 2
+        x_pad = F.pad(x, (padding, padding, padding, padding), mode='constant', value=0)
+        patches = x_pad.unfold(dimension=2, size=self.ksize, step=1)
+        patches = patches.unfold(dimension=3, size=self.ksize, step=1)
+        # eroded, _ = (patches - self.erode_kernel).reshape(b, 1, h, w, -1).min(dim=-1)
+        eroded, _ = (patches).reshape(b, 1, h, w, -1).min(dim=-1)
+        return eroded
+
+class Morph_pre(nn.Module):
+    def __init__(self, c1, c2, k):
+        super().__init__()
+        assert c1==3 and c2==3, 'preprosess: in_ch=3 and out_ch=3.'
+        self.openop_e = Erode_my(c1, 1, k)
+        self.openop_d = Dilation_my(1, 1, k)
+
+        self.closeop_d = Dilation_my(1, 1, k)
+        self.closeop_e = Erode_my(1, 1, k)
+        
+        self.dilate = Dilation_my(1, 1, k)
+
+    def forward(self, x):
+        x_open = self.openop_d(self.openop_e(x))
+        x_d = self.dilate(x_open)
+        x_close = self.closeop_e(self.closeop_d(x_open))
+        x_pre = x_d - x_close
+        return  torch.cat([x[:, :2, :, :], x_pre], 1)
+
+
+
+def iwt_init(x):
+    r = 2
+    in_batch, in_channel, in_height, in_width = x.size()
+    # print([in_batch, in_channel, in_height, in_width])
+    out_batch, out_channel, out_height, out_width = in_batch, int(
+        in_channel / (r ** 2)), r * in_height, r * in_width
+    x1 = x[:, 0:out_channel, :, :] / 2
+    x2 = x[:, out_channel:out_channel * 2, :, :] / 2
+    x3 = x[:, out_channel * 2:out_channel * 3, :, :] / 2
+    x4 = x[:, out_channel * 3:out_channel * 4, :, :] / 2
+
+    h = torch.zeros([out_batch, out_channel, out_height, out_width]).float().cuda()
+
+    h[:, :, 0::2, 0::2] = x1 - x2 - x3 + x4
+    h[:, :, 1::2, 0::2] = x1 - x2 + x3 - x4
+    h[:, :, 0::2, 1::2] = x1 + x2 - x3 - x4
+    h[:, :, 1::2, 1::2] = x1 + x2 + x3 + x4
+
+    return h
+
+
+class Multi_resolution(nn.Module):
+    def __init__(self, c1, c2):
+        super(Multi_resolution, self).__init__()
+        assert c1 == c2, 'c1 must be same as c2!'
+        self.ch1_3 = math.floor(c1/3)
+        self.ch2 = c1 - 2*self.ch1_3
+
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.fc1 = nn.Conv2d(self.ch1_3, self.ch1_3, 1, 1, 0, bias=True)
+        self.fc2 = nn.Conv2d(self.ch2, self.ch2, 1, 1, 0, bias=True)
+        self.fc3 = nn.Conv2d(self.ch1_3, self.ch1_3, 1, 1, 0, bias=True)
+        self.act = nn.Sigmoid()
+        
+
+    def forward(self, x):
+        x_LL, x_HL, x_LH, _ = self.dwt_init(x)
+
+        x1 = x_LL[:, :self.ch1_3, :, :]
+        x2 = x_LH[:, self.ch1_3:self.ch2+self.ch1_3, :, :]
+        x3 = x_HL[:, -self.ch1_3:, :, :]
+
+        x1 = x[:, :self.ch1_3, :, :] * self.act(self.fc1(self.pool(x1)))
+        x2 = x[:, self.ch1_3:self.ch2+self.ch1_3, :, :] * self.act(self.fc2(self.pool(x2)))
+        x3 = x[:, -self.ch1_3:, :, :] * self.act(self.fc3(self.pool(x3)))
+
+        return torch.cat([x1, x2, x3], 1)
+    
+    def dwt_init(self, x):
+        x01 = x[:, :, 0::2, :] / 2
+        x02 = x[:, :, 1::2, :] / 2
+        x1 = x01[:, :, :, 0::2]
+        x2 = x02[:, :, :, 0::2]
+        x3 = x01[:, :, :, 1::2]
+        x4 = x02[:, :, :, 1::2]
+        x_LL = x1 + x2 + x3 + x4
+        x_HL = -x1 - x2 + x3 + x4
+        x_LH = -x1 + x2 - x3 + x4
+        x_HH = x1 - x2 - x3 + x4
+
+        return x_LL, x_HL, x_LH, x_HH
+
+class DWT(nn.Module):
+    def __init__(self, c1, c2):
+        super(DWT, self).__init__()
+        assert c1 == c2, 'c1 must be same as c2!'
+        
+
+    def forward(self, x):
+        x_LL, x_HL, x_LH, x_HH = self.dwt_init(x[:, :1, :, :])
+        x_HL = F.interpolate(x_HL, scale_factor=2)
+        x_LH = F.interpolate(x_LH, scale_factor=2)
+
+        return torch.cat([x[:, :1, :, :], x_HL, x_LH], 1)
+    
+    def dwt_init(self, x):
+        x01 = x[:, :, 0::2, :] / 2
+        x02 = x[:, :, 1::2, :] / 2
+        x1 = x01[:, :, :, 0::2]
+        x2 = x02[:, :, :, 0::2]
+        x3 = x01[:, :, :, 1::2]
+        x4 = x02[:, :, :, 1::2]
+        x_LL = x1 + x2 + x3 + x4
+        x_HL = -x1 - x2 + x3 + x4
+        x_LH = -x1 + x2 - x3 + x4
+        x_HH = x1 - x2 - x3 + x4
+
+        return x_LL, x_HL, x_LH, x_HH
+
+
+class IWT(nn.Module):
+    def __init__(self):
+        super(IWT, self).__init__()
+        self.requires_grad = False
+
+    def forward(self, x):
+        return iwt_init(x)
+
+
+def get_freq_indices(method):
+    assert method in ['top1','top2','top4','top8','top16','top32',
+                      'bot1','bot2','bot4','bot8','bot16','bot32',
+                      'low1','low2','low4','low8','low16','low32']
+    num_freq = int(method[3:])
+    if 'top' in method:
+        all_top_indices_x = [0,0,6,0,0,1,1,4,5,1,3,0,0,0,3,2,4,6,3,5,5,2,6,5,5,3,3,4,2,2,6,1]
+        all_top_indices_y = [0,1,0,5,2,0,2,0,0,6,0,4,6,3,5,2,6,3,3,3,5,1,1,2,4,2,1,1,3,0,5,3]
+        mapper_x = all_top_indices_x[:num_freq]
+        mapper_y = all_top_indices_y[:num_freq]
+    elif 'low' in method:
+        all_low_indices_x = [0,0,1,1,0,2,2,1,2,0,3,4,0,1,3,0,1,2,3,4,5,0,1,2,3,4,5,6,1,2,3,4]
+        all_low_indices_y = [0,1,0,1,2,0,1,2,2,3,0,0,4,3,1,5,4,3,2,1,0,6,5,4,3,2,1,0,6,5,4,3]
+        mapper_x = all_low_indices_x[:num_freq]
+        mapper_y = all_low_indices_y[:num_freq]
+    elif 'bot' in method:
+        all_bot_indices_x = [6,1,3,3,2,4,1,2,4,4,5,1,4,6,2,5,6,1,6,2,2,4,3,3,5,5,6,2,5,5,3,6]
+        all_bot_indices_y = [6,4,4,6,6,3,1,4,4,5,6,5,2,2,5,1,4,3,5,0,3,1,1,2,4,2,1,1,5,3,3,3]
+        mapper_x = all_bot_indices_x[:num_freq]
+        mapper_y = all_bot_indices_y[:num_freq]
+    else:
+        raise NotImplementedError
+    return mapper_x, mapper_y
+
+class MultiSpectral(nn.Module):
+    def __init__(self, channel, c2, dct_h, dct_w, reduction = 16, freq_sel_method = 'low4'):
+        super(MultiSpectral, self).__init__()
+        assert channel == c2, 'in_ch must be the same as out_ch!'
+        self.reduction = reduction
+        self.dct_h = dct_h
+        self.dct_w = dct_w
+
+        mapper_x, mapper_y = get_freq_indices(freq_sel_method)
+        self.num_split = len(mapper_x)
+        mapper_x = [temp_x * (dct_h // 7) for temp_x in mapper_x] 
+        mapper_y = [temp_y * (dct_w // 7) for temp_y in mapper_y]
+        # make the frequencies in different sizes are identical to a 7x7 frequency space
+        # eg, (2,2) in 14x14 is identical to (1,1) in 7x7
+
+        self.dct_layer = MultiSpectralDCTLayer(dct_h, dct_w, mapper_x, mapper_y, channel)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        n,c,h,w = x.shape
+        x_pooled = x
+        if h != self.dct_h or w != self.dct_w:
+            x_pooled = torch.nn.functional.adaptive_avg_pool2d(x, (self.dct_h, self.dct_w))
+            # If you have concerns about one-line-change, don't worry.   :)
+            # In the ImageNet models, this line will never be triggered. 
+            # This is for compatibility in instance segmentation and object detection.
+        y = self.dct_layer(x_pooled)
+
+        y = self.fc(y).view(n, c, 1, 1)
+        return x * y.expand_as(x)
+
+
+class MultiSpectralDCTLayer(nn.Module):
+    """
+    Generate dct filters
+    """
+    def __init__(self, height, width, mapper_x, mapper_y, channel):
+        super(MultiSpectralDCTLayer, self).__init__()
+        
+        assert len(mapper_x) == len(mapper_y)
+        assert channel % len(mapper_x) == 0
+
+        self.num_freq = len(mapper_x)
+
+        # fixed DCT init
+        self.register_buffer('weight', self.get_dct_filter(height, width, mapper_x, mapper_y, channel))
+        
+        # fixed random init
+        # self.register_buffer('weight', torch.rand(channel, height, width))
+
+        # learnable DCT init
+        # self.register_parameter('weight', self.get_dct_filter(height, width, mapper_x, mapper_y, channel))
+        
+        # learnable random init
+        # self.register_parameter('weight', torch.rand(channel, height, width))
+
+        # num_freq, h, w
+
+    def forward(self, x):
+        assert len(x.shape) == 4, 'x must been 4 dimensions, but got ' + str(len(x.shape))
+        # n, c, h, w = x.shape
+
+        x = x * self.weight
+
+        result = torch.sum(x, dim=[2,3])
+        return result
+
+    def build_filter(self, pos, freq, POS):
+        result = math.cos(math.pi * freq * (pos + 0.5) / POS) / math.sqrt(POS) 
+        if freq == 0:
+            return result
+        else:
+            return result * math.sqrt(2)
+    
+    def get_dct_filter(self, tile_size_x, tile_size_y, mapper_x, mapper_y, channel):
+        dct_filter = torch.zeros(channel, tile_size_x, tile_size_y)
+
+        c_part = channel // len(mapper_x)
+
+        for i, (u_x, v_y) in enumerate(zip(mapper_x, mapper_y)):
+            for t_x in range(tile_size_x):
+                for t_y in range(tile_size_y):
+                    dct_filter[i * c_part: (i+1)*c_part, t_x, t_y] = self.build_filter(t_x, u_x, tile_size_x) * self.build_filter(t_y, v_y, tile_size_y)
+                        
+        return dct_filter

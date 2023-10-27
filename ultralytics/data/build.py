@@ -10,7 +10,7 @@ from PIL import Image
 from torch.utils.data import dataloader, distributed
 
 from ultralytics.data.loaders import (LOADERS, LoadImages, LoadPilAndNumpy, LoadScreenshots, LoadStreams, LoadTensor,
-                                      SourceTypes, autocast_list)
+                                      SourceTypes, autocast_list, LoadImageList)
 from ultralytics.data.utils import IMG_FORMATS, VID_FORMATS
 from ultralytics.utils import RANK, colorstr
 from ultralytics.utils.checks import check_file
@@ -136,9 +136,9 @@ def build_dataloader(dataset, batch, workers, shuffle=True, rank=-1):
                               generator=generator)
 
 
-def check_source(source):
+def check_source(source, det_path):
     """Check source type and return corresponding flag values."""
-    webcam, screenshot, from_img, in_memory, tensor = False, False, False, False, False
+    webcam, screenshot, from_img, in_memory, tensor, from_pathlist = False, False, False, False, False, False
     if isinstance(source, (str, int, Path)):  # int for local usb camera
         source = str(source)
         is_file = Path(source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
@@ -150,8 +150,11 @@ def check_source(source):
     elif isinstance(source, LOADERS):
         in_memory = True
     elif isinstance(source, (list, tuple)):
-        source = autocast_list(source)  # convert all list elements to PIL or np arrays
-        from_img = True
+        if det_path is None:
+            source = autocast_list(source)  # convert all list elements to PIL or np arrays
+            from_img = True
+        else:
+            from_pathlist = True
     elif isinstance(source, (Image.Image, np.ndarray)):
         from_img = True
     elif isinstance(source, torch.Tensor):
@@ -159,10 +162,10 @@ def check_source(source):
     else:
         raise TypeError('Unsupported image type. For supported types see https://docs.ultralytics.com/modes/predict')
 
-    return source, webcam, screenshot, from_img, in_memory, tensor
+    return source, webcam, screenshot, from_img, in_memory, tensor, from_pathlist
 
 
-def load_inference_source(source=None, imgsz=640, vid_stride=1, stream_buffer=False):
+def load_inference_source(source=None, det_path=None, imgsz=640, vid_stride=1, stream_buffer=False):
     """
     Loads an inference source for object detection and applies necessary transformations.
 
@@ -175,8 +178,8 @@ def load_inference_source(source=None, imgsz=640, vid_stride=1, stream_buffer=Fa
     Returns:
         dataset (Dataset): A dataset object for the specified input source.
     """
-    source, webcam, screenshot, from_img, in_memory, tensor = check_source(source)
-    source_type = source.source_type if in_memory else SourceTypes(webcam, screenshot, from_img, tensor)
+    source, webcam, screenshot, from_img, in_memory, tensor, from_pathlist = check_source(source, det_path)
+    source_type = source.source_type if in_memory else SourceTypes(webcam, screenshot, from_img, tensor, from_pathlist)
 
     # Dataloader
     if tensor:
@@ -189,6 +192,8 @@ def load_inference_source(source=None, imgsz=640, vid_stride=1, stream_buffer=Fa
         dataset = LoadScreenshots(source, imgsz=imgsz)
     elif from_img:
         dataset = LoadPilAndNumpy(source, imgsz=imgsz)
+    elif from_pathlist:
+        dataset = LoadImageList(source, det_path, imgsz=imgsz)
     else:
         dataset = LoadImages(source, imgsz=imgsz, vid_stride=vid_stride)
 

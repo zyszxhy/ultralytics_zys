@@ -1,0 +1,77 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# YOLOv8 object detection model with P3-P5 outputs. For Usage examples see https://docs.ultralytics.com/tasks/detect
+
+# Parameters
+nc: 80  # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov8n.yaml' will call yolov8.yaml with scale 'n'
+  # [depth, width, max_channels]
+  n: [1.00, 0.25, 1024]
+  s: [1.00, 0.50, 1024]
+  m: [1.00, 0.75, 1024]
+  l: [1.00, 1.00, 1024]
+  x: [1.00, 1.25, 1024]
+
+
+# l1: 2
+# l2: 8
+# c1: 32
+# c2: 256
+# sr: True
+# factor: 2
+
+l1: None
+l2: None
+c1: None
+c2: None
+sr: False
+factor: None
+
+# YOLOv8.0n backbone
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [16, 3, 2, None, 1, 1, 'HardSwish']]  # 0-P1/2
+  - [-1, 1, DepSepConv, [32, 3, 1, 0]]  # 1
+  - [-1, 1, CoordAtt, [32]]  # 2
+
+  - [-1, 1, DepSepConv, [64, 3, 2, 0]]  # 3-P2/4
+  - [-1, 1, DepSepConv, [64, 3, 1, 0]]  # 4
+  - [-1, 1, CoordAtt, [64]]  # 5
+
+  - [-1, 1, DepSepConv, [128, 3, 2, 0]]  # 6-P3/8
+  - [-1, 1, DepSepConv, [128, 3, 1, 0]]  # 7
+  - [-1, 1, CoordAtt, [128]]  # 8
+
+  - [-1, 1, DepSepConv, [256, 5, 2, 0]]  # 9-P4/16
+  - [-1, 5, DepSepConv, [256, 5, 1, 0]]  # 10
+  - [-1, 1, CoordAtt, [256]]  # 11
+
+  - [-1, 1, DepSepConv, [512, 5, 2, 1]]  # 12-P5/32
+  - [-1, 1, DepSepConv, [512, 5, 1, 1]]  # 13
+  - [-1, 1, SPPF, [512, 5]]  # 14 modify
+  - [-1, 1, CoordAtt, [512]]  # 15
+
+  - [-1, 1, DP, [512]] # 16
+
+# YOLOv8.0n head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
+  - [[-1, 11], 1, Concat, [1]]  # cat backbone P4
+  - [-1, 1, DepSepConv, [256, 3, 1, 0]]  # 19
+  - [-1, 1, DP, [256]]  # 20
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
+  - [[-1, 8], 1, Concat, [1]]  # cat backbone P3
+  - [-1, 1, DepSepConv, [128, 3, 1, 0]]  # 23 (P3/8-small)
+  - [-1, 1, DP, [128]]  # 24
+
+  # - [-1, 1, DepSepConv, [128, 3, 2, 0]]
+  # - [[-1, 20], 1, Concat, [1]]  # cat head P4
+  # - [-1, 1, DepSepConv, [256, 3, 1, 0]]  # 27 (P4/16-medium)
+  # - [-1, 1, CoordAtt, [256]]  # 28
+
+  # - [-1, 1, DepSepConv, [256, 3, 2, 0]]
+  # - [[-1, 16], 1, Concat, [1]]  # cat head P5
+  # - [-1, 1, DepSepConv, [512, 3, 1, 0]]  # 31 (P5/32-large)
+  # - [-1, 1, CoordAtt, [512]]  # 32
+
+  - [[24], 1, Detect, [nc]]  # Detect(P3, P4, P5)
