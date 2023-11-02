@@ -1,6 +1,6 @@
 from ultralytics import YOLO, YOLO_m
 
-model = YOLO('/home/zhangyusi/FenghuoCup_final/pp_lcnet_coordatt_sppf_dp_fpn_det3_yolov8s/weights/last.pt')
+model = YOLO('/home/zhangyusi/FenghuoCup_final/yolov8n_coordatt_dp_fpn_det3_all_pre/weights/last.pt')
 data = 'SAR_AIRcraft.yaml'
 model.val(data=data,
           split='test',
@@ -10,7 +10,7 @@ model.val(data=data,
           batch=1,
           save_json=True,
           save_txt=True,
-          device=3,
+          device=6,
           crop_sub=False,
           crop_size=800,
           crop_overlap=0.2)

@@ -98,19 +98,19 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 
 # SAR_AIRcraft1.0 YOLOv8
 
-model = YOLO('yolov8n.yaml')
-model.train(data='SAR_AIRcraft_final_ori.yaml',
+model = YOLO('yolov8n_coordatt_dp_fpn_det3.yaml')
+model.train(data='SAR_AIRcraft_final_all.yaml',
             epochs=300,
-            patience=50,
+            patience=20,
             project='FenghuoCup_final',
-            name='yolov8n_ori',
+            name='yolov8n_coordatt_dp_fpn_det3_all_pre',
             imgsz_train=800,
             imgsz_val=800,
             imgsz=800,
             sr=6,
             resume=False,
-            pretrained='/home/data3/zys/pretrained_weights/yolov8s.pt',
-            device=5,
+            pretrained='/home/data3/zys/pretrained_weights/yolov8n.pt',
+            device=6,
             batch=32,
             optimizer='auto',
             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
