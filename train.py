@@ -44,28 +44,30 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 
 # VEDAI YOLOv8l
 
-# model = YOLO('yolov8l.yaml')
-# model.train(data='FLIR.yaml',
-#             epochs=100,
-#             name='yolov8l_flir_rgb',
-#             imgsz_train=640,
-#             imgsz_val=640,
-#             resume=False,
-#             pretrained='/home/data3/zys/pretrained_weights/yolov8l.pt',
-#             batch=8,
-#             device=5,
-#             optimizer='auto',
-#             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
-#             lrf=0.01,  # (float) final learning rate (lr0 * lrf)
-#             momentum=0.937,  # (float) SGD momentum/Adam beta1
-#             weight_decay=0.0005,  # (float) optimizer weight decay 5e-4
-#             warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
-#             warmup_momentum=0.8,  # (float) warmup initial momentum
-#             warmup_bias_lr=0.1,  # (float) warmup initial bias lr
-#             lr_mult_list=[],
-#             lr_mult_blockid=[],
-#             multisteplr=False,
-#             )
+model = YOLO('yolov8m.yaml')
+model.train(data='FLIR.yaml',
+            epochs=100,
+            project='FLIR_detection',
+            name='yolov8m_flir_rgb',
+            imgsz_train=640,
+            imgsz_val=640,
+            imgsz=640,
+            resume=False,
+            pretrained='/home/data3/zys/pretrained_weights/yolov8m.pt',
+            batch=8,
+            device=4,
+            optimizer='auto',
+            lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
+            lrf=0.01,  # (float) final learning rate (lr0 * lrf)
+            momentum=0.937,  # (float) SGD momentum/Adam beta1
+            weight_decay=0.0005,  # (float) optimizer weight decay 5e-4
+            warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
+            warmup_momentum=0.8,  # (float) warmup initial momentum
+            warmup_bias_lr=0.1,  # (float) warmup initial bias lr
+            lr_mult_list=[],
+            lr_mult_blockid=[],
+            multisteplr=False,
+            )
 
 
 
@@ -98,37 +100,37 @@ from ultralytics import RTDETR, YOLO, YOLO_m
 
 # SAR_AIRcraft1.0 YOLOv8
 
-model = YOLO('yolov8n_coordatt_dp_fpn_det3.yaml')
-model.train(data='SAR_AIRcraft_final_all.yaml',
-            epochs=300,
-            patience=20,
-            project='FenghuoCup_final',
-            name='yolov8n_coordatt_dp_fpn_det3_all_pre',
-            imgsz_train=800,
-            imgsz_val=800,
-            imgsz=800,
-            sr=6,
-            resume=False,
-            pretrained='/home/data3/zys/pretrained_weights/yolov8n.pt',
-            device=6,
-            batch=32,
-            optimizer='auto',
-            lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
-            lrf=0.01,  # (float) final learning rate (lr0 * lrf)
-            momentum=0.937,  # (float) SGD momentum/Adam beta1
-            weight_decay=0.0005,  # (float) optimizer weight decay 5e-4
-            warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
-            warmup_momentum=0.8,  # (float) warmup initial momentum
-            warmup_bias_lr=0.1,  # (float) warmup initial bias lr
-            lr_mult_list=[],
-            lr_mult_blockid=[],
-            multisteplr=False,
-            hsv_h=0,
-            hsv_s=0,
-            hsv_v=0,
-            multi_scale=[800, 1000, 1200, 1500],
-            mosaic=1.0,
-            )
+# model = YOLO('yolov8n.yaml')
+# model.train(data='FLIR.yaml',
+#             epochs=100,
+#             patience=20,
+#             project='FLIR_detection',
+#             name='yolov8n_flir_rgb',
+#             imgsz_train=640,
+#             imgsz_val=640,
+#             imgsz=640,
+#             sr=6,
+#             resume=False,
+#             pretrained='/home/data3/zys/pretrained_weights/yolov8n.pt',
+#             device=7,
+#             batch=8,
+#             optimizer='auto',
+#             lr0=0.01,  # (float) initial learning rate (i.e. SGD=1E-2, Adam=1E-3)
+#             lrf=0.01,  # (float) final learning rate (lr0 * lrf)
+#             momentum=0.937,  # (float) SGD momentum/Adam beta1
+#             weight_decay=0.0005,  # (float) optimizer weight decay 5e-4
+#             warmup_epochs=3.0,  # (float) warmup epochs (fractions ok)
+#             warmup_momentum=0.8,  # (float) warmup initial momentum
+#             warmup_bias_lr=0.1,  # (float) warmup initial bias lr
+#             lr_mult_list=[],
+#             lr_mult_blockid=[],
+#             multisteplr=False,
+#             hsv_h=0,
+#             hsv_s=0,
+#             hsv_v=0,
+#             multi_scale=[800, 1000, 1200, 1500],
+#             mosaic=1.0,
+#             )
 
 # MLSDNet
 

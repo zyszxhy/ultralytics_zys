@@ -1,13 +1,13 @@
 from ultralytics import YOLO, YOLO_m
 
 model = YOLO('/home/zhangyusi/FenghuoCup_final/yolov8n_coordatt_dp_fpn_det3_all_pre/weights/last.pt')
-data = 'SAR_AIRcraft.yaml'
+data = 'FLIR.yaml'
 model.val(data=data,
           split='test',
-          project='FenghuoCup',
-          imgsz_val=800,
+          project='FLIR_detection',
+          imgsz_val=640,
           conf=0.06,
-          batch=1,
+          batch=8,
           save_json=True,
           save_txt=True,
           device=6,

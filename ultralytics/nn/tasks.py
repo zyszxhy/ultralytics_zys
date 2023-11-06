@@ -924,31 +924,31 @@ def format_state_dict(csd):
             my_state_dict[newkey] = value
         
         elif layer_id>=1 and layer_id<=2:
-            new_layer_id = str(layer_id + 1)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=3 and layer_id<=4:
-            new_layer_id = str(layer_id + 2)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=5 and layer_id<=6:
-            new_layer_id = str(layer_id + 3)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=7 and layer_id<=9:
-            new_layer_id = str(layer_id + 4)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
         
         elif layer_id>=10:
-            new_layer_id = str(layer_id + 5)
+            new_layer_id = str(layer_id + 0)
             key = key.replace(str(layer_id), str(new_layer_id), 1)
             newkey = key
             my_state_dict[newkey] = value
